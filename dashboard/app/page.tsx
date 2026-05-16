@@ -15,20 +15,30 @@ export default function Home() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 3. THE NETWORK REQUEST (The GET Route)
-  // useEffect runs automatically as soon as this page loads in the browser.
+  // 3. THE NETWORK REQUEST (Upgraded with Polling)
   useEffect(() => {
-    // We hit the Express API route you built earlier!
-    fetch('http://localhost:3000/api/posts')
-      .then((res) => res.json())
-      .then((data) => {
-        setPosts(data); // Save the database rows into our React state
-        setLoading(false); // Turn off the loading screen
-      })
-      .catch((err) => {
-        console.error("Error fetching posts:", err);
-        setLoading(false);
-      });
+    // We wrap our fetch logic in a function so we can call it repeatedly
+    const fetchPosts = () => {
+      fetch('http://localhost:3000/api/posts')
+        .then((res) => res.json())
+        .then((data) => {
+          setPosts(data);
+          setLoading(false);
+        })
+        .catch((err) => {
+          console.error("Error fetching posts:", err);
+          setLoading(false);
+        });
+    };
+
+    // Fetch immediately when the page first loads
+    fetchPosts();
+
+    // Set up a background timer to fetch again every 30 seconds (30000 milliseconds)
+    const intervalId = setInterval(fetchPosts, 30000);
+
+    // Cleanup function: If the user closes the tab, we stop the timer to save memory
+    return () => clearInterval(intervalId);
   }, []);
 
   return (
