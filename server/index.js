@@ -26,9 +26,9 @@ const db = new sqlite3.Database('./sportsgram.sqlite', (err) => {
     } else {
         console.log('Connected to the SQLite database.');
         
-        // 5. TABLE CREATION
+        // 5. TABLE CREATION - UPGRADED WITH TOKEN DEFENSE
         // Once connected, we execute a SQL command to ensure our schema exists.
-        // This is a raw SQL string, very similar to how you use sqlx in Rust, just without the compile-time checks.
+        // Added the 'url' column as UNIQUE to prevent duplicate AI processing.
         db.run(`
             CREATE TABLE IF NOT EXISTS posts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,6 +36,7 @@ const db = new sqlite3.Database('./sportsgram.sqlite', (err) => {
                 headline TEXT,
                 content TEXT,
                 excitement_level INTEGER,
+                url TEXT UNIQUE,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         `, (err) => {
@@ -48,11 +49,21 @@ const db = new sqlite3.Database('./sportsgram.sqlite', (err) => {
 // 6. ROUTING (The API Endpoints)
 // When a client visits http://localhost:3000/api/health it fires this callback function. 
 // 'req' is the incoming request, 'res' is the outgoing response.
-// The GET route will send back a JSON object with a status and message to indicate that the API is running.
-// The status is a standard HTTP status code, and the message is just a custom string we defined.
 app.get('/api/health', (req, res) => {
     // We send back a standard HTTP 200 OK status with a JSON payload.
     res.status(200).json({ status: 'Online', message: 'Sportsgram API is running' });
+});
+
+// THE DEDUPLICATION CHECKER ROUTE (The Gatekeeper)
+// The scraper hits this route first to see if a URL already exists in the database.
+app.post('/api/posts/check', (req, res) => {
+    const { url } = req.body;
+    // We query the database to see if any post already has this URL. If it does, we return { exists: true }.
+    // {exists:!!row} is a common JavaScript trick to convert a row object into a boolean (true if it exists, false if null).
+    db.get(`SELECT id FROM posts WHERE url = ?`, [url], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ exists: !!row }); // Returns true if the URL is already in the DB
+    });
 });
 
 // 8. CREATING DATA (The POST Route - the 'write' operation)
@@ -60,44 +71,32 @@ app.get('/api/health', (req, res) => {
 // When your scraper grabs a new article from the web and Gemini formats it, the scraper needs a way to hand that 
 // data over to the database. It packages the data into a JSON payload and sends it via a POST request.
 app.post('/api/posts', (req, res) => {
-    // We extract the data from the incoming JSON payload (req.body).
-    // In Rust or C++, you would define a strict Struct or Class for this. 
-    // In JavaScript, we use a feature called "destructuring" to pull variables straight out of the JSON.
-    const { sport_category, headline, content, excitement_level } = req.body;
+    const { sport_category, headline, content, excitement_level, url } = req.body;
 
     // Basic validation: Check if the request is missing any data.
-    if (!sport_category || !headline || !content || !excitement_level) {
-        // Return a 400 Bad Request if data is missing.
+    if (!sport_category || !headline || !content || !excitement_level || !url) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // We use parameterized queries (the '?' marks) to prevent SQL injection.
-    // This is exactly like using prepared statements in C++ or sqlx in Rust.
-    const sql = `INSERT INTO posts (sport_category, headline, content, excitement_level) 
-                 VALUES (?, ?, ?, ?)`;
+    // The question marks are placeholders for parameterized queries. They help prevent SQL injection attacks by treating the 
+    // values as data rather than executable code. When we call db.run, we pass an array of values that correspond to each question
+    // mark in the SQL string. The database engine safely substitutes these values into the query, ensuring that any malicious input 
+    // is not executed as part of the SQL command.
+    const sql = `INSERT INTO posts (sport_category, headline, content, excitement_level, url) 
+                 VALUES (?, ?, ?, ?, ?)`;
 
-    // db.run executes the query. The array brackets [] hold the variables that replace the '?' marks in order.
-    // Notice the callback function uses the standard 'function(err)' syntax instead of an arrow '=>' function. 
-    // This is required in the sqlite3 library so we can access 'this.lastID'.
-    db.run(sql, [sport_category, headline, content, excitement_level], function(err) {
+    db.run(sql, [sport_category, headline, content, excitement_level, url], function(err) {
         if (err) {
             console.error("Error inserting data:", err.message);
-            // 500 means Internal Server Error
             return res.status(500).json({ error: 'Failed to save post to database' });
         }
-        
-        // If successful, send back a 201 Created status and the new ID.
-        res.status(201).json({ 
-            message: 'Sportsgram post created successfully!', 
-            postId: this.lastID 
-        });
+        res.status(201).json({ message: 'Sportsgram post created successfully!', postId: this.lastID });
     });
 });
 
 // 9. READING DATA (The GET Route - 'read operation')
 // Big Picture: When a user opens Sportsgram on their phone or laptop, the UI is completely empty. 
 // The frontend immediately fires off a GET request to your server asking for the latest data to display.
-// Your Next.js UI will hit this URL to fetch the latest feed.
 app.get('/api/posts', (req, res) => {
     // We write a SQL query to get everything, ordering by newest first.
     const sql = `SELECT * FROM posts ORDER BY timestamp DESC LIMIT 50`;
@@ -116,7 +115,6 @@ app.get('/api/posts', (req, res) => {
 
 // 7. SERVER BINDING
 // Finally, we tell the Express app to bind to the port and start listening for traffic.
-// This is identical to tokio::net::TcpListener::bind in your Rust backend.
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
