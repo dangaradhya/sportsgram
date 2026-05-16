@@ -11,6 +11,7 @@
   "description": "",
   "dependencies": {
     "@google/genai": "^2.3.0",
+    "cheerio": "^1.2.0",
     "dotenv": "^17.4.2",
     "node-cron": "^4.2.1",
     "rss-parser": "^3.13.0"

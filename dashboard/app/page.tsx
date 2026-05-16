@@ -22,9 +22,29 @@ export default function Home() {
   const [hasMore, setHasMore] = useState(true); // Turns off the button when we hit the end of the DB
   const [loadingMore, setLoadingMore] = useState(false); // Spinner for the Load More button
 
-  // Share State
+  // Phase 3 - Share State
   // We track the ID of the post that was copied to show a temporary "Copied!" tooltip
   const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  // Authentication Phase - User & Modal State
+  // 'user' holds the current logged-in user's info (or null if not logged in).
+  // 'showAuthModal' controls whether the login/register modal is visible.
+  // 'authMode' toggles between 'login' and 'register' forms. 'authForm' holds the form input values. 
+  // 'authError' and 'authLoading' manage the UI state during authentication.
+  const [user, setUser] = useState<{ username: string, token: string } | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authForm, setAuthForm] = useState({ username: '', password: '' });
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // Authentication Phase - Check for existing session on load
+  useEffect(() => {
+    const storedSession = localStorage.getItem('sportsgram_session');
+    if (storedSession) {
+      setUser(JSON.parse(storedSession));
+    }
+  }, []);
 
   // 3. THE NETWORK REQUEST 
   // Refactored Fetch Logic to accept a page number
@@ -64,6 +84,59 @@ export default function Home() {
   useEffect(() => {
     fetchPosts(page);
   }, [page]);
+
+  // Authentication Phase - Handle form submission for Login/Register
+  const handleAuthSubmit = async (e: React.SyntheticEvent) => {
+
+    // Set loading state and clear previous errors
+    e.preventDefault();
+    setAuthError('');
+    setAuthLoading(true);
+
+    // Depending on whether we're in 'login' or 'register' mode, we send the form data to the appropriate Express endpoint.
+    try {
+      const res = await fetch(`http://localhost:3000/api/${authMode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(authForm)
+      });
+      
+      // We expect the Express server to return a JSON object with either an 'error' field (if something went wrong) or 'username' and 'token' fields (if successful).
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error || 'Authentication failed');
+
+      // If we're in register mode and it's successful, we switch to login mode and prompt the user to log in. 
+      // If we're in login mode and it's successful, we save the session and close the modal.
+      if (authMode === 'register') {
+        // Switch to login mode and show success message
+        setAuthMode('login');
+        setAuthError('Account created! Please log in.');
+        setAuthForm(prev => ({ ...prev, password: '' })); // Clear password for security
+      } else {
+        // Save session and close modal
+        // We create a session object with the username and token returned from the server, save it to state and localStorage, and then close the modal.
+        // If we only save it in state, the user would be logged out as soon as they refresh the page. By saving it in localStorage, we can check for 
+        // an existing session when the app loads and keep the user logged in until they choose to log out. Also, we clear the auth form for security and UX reasons
+        // and close the modal to show the main app interface.
+        const sessionData = { username: data.username, token: data.token };
+        setUser(sessionData);
+        localStorage.setItem('sportsgram_session', JSON.stringify(sessionData));
+        setShowAuthModal(false);
+        setAuthForm({ username: '', password: '' });
+      }
+    } catch (err: any) {
+      setAuthError(err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Authentication Phase - Handle Logout
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('sportsgram_session');
+  };
 
   // 4. THE LIKE FUNCTION
   // This function handles the user clicking the heart button.
@@ -122,21 +195,120 @@ export default function Home() {
     : posts.filter(post => post.sport_category === activeCategory);
 
   return (
-    <main className="min-h-screen bg-gray-950 text-white p-4 md:p-8">
+    <main className="min-h-screen bg-gray-950 text-white p-4 md:p-8 relative">
+      
+      {/* CHANGE ADDED: Authentication Phase - The Auth Modal Overlay */}
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-md shadow-2xl relative">
+            <button 
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            
+            <h2 className="text-2xl font-bold mb-6 text-center">
+              {authMode === 'login' ? 'Welcome Back' : 'Join Sportsgram'}
+            </h2>
+
+            <form onSubmit={handleAuthSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Username</label>
+                <input 
+                  type="text" 
+                  required
+                  value={authForm.username}
+                  onChange={(e) => setAuthForm({...authForm, username: e.target.value})}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
+                  placeholder="Enter your username"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Password</label>
+                <input 
+                  type="password" 
+                  required
+                  minLength={6}
+                  value={authForm.password}
+                  onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
+                  placeholder="Minimum 6 characters"
+                />
+              </div>
+              
+              {authError && (
+                <p className={`text-sm ${authError.includes('created') ? 'text-green-400' : 'text-red-400'} text-center`}>
+                  {authError}
+                </p>
+              )}
+
+              <button 
+                type="submit" 
+                disabled={authLoading}
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3 rounded-lg transition-all disabled:opacity-50 mt-4"
+              >
+                {authLoading ? 'Processing...' : (authMode === 'login' ? 'Sign In' : 'Create Account')}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center text-sm text-gray-400">
+              {authMode === 'login' ? "Don't have an account? " : "Already have an account? "}
+              <button 
+                onClick={() => {
+                  setAuthMode(authMode === 'login' ? 'register' : 'login');
+                  setAuthError('');
+                }}
+                className="text-purple-400 hover:text-purple-300 font-semibold transition-colors"
+              >
+                {authMode === 'login' ? 'Register here' : 'Login here'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-2xl mx-auto">
         
         {/* Header Section */}
-        <h1 className="text-4xl font-bold mb-8 text-center bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
-          Sportsgram
-        </h1>
+        {/* Authentication Phase - Updated Header Layout with User Profile */}
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
+            Sportsgram
+          </h1>
+          
+          <div>
+            {user ? (
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-full">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-orange-500 to-purple-600"></div>
+                  <span className="text-sm font-semibold text-gray-200">{user.username}</span>
+                </div>
+                <button 
+                  onClick={handleLogout}
+                  className="text-sm text-gray-500 hover:text-red-400 transition-colors font-medium"
+                >
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={() => setShowAuthModal(true)}
+                className="bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold px-5 py-2 rounded-full border border-gray-700 transition-colors"
+              >
+                Sign In
+              </button>
+            )}
+          </div>
+        </div>
 
         {/* 6. CONDITIONAL RENDERING */}
         {loading && page === 1 ? (
           // Show this while waiting for the Express server to reply
-          <p className="text-center text-gray-400 animate-pulse">Loading the latest news...</p>
+          <p className="text-center text-gray-400 animate-pulse mt-20">Loading the latest news...</p>
         ) : posts.length === 0 ? (
           // Show this if the database is empty
-          <p className="text-center text-gray-400">No news in the database yet. Run the scraper!</p>
+          <p className="text-center text-gray-400 mt-20">No news in the database yet. Run the scraper!</p>
         ) : (
           <>
             {/* The Category Filter Bar UI */}
@@ -209,7 +381,7 @@ export default function Home() {
                         <span className="text-sm font-semibold">{post.likes || 0}</span>
                       </button>
 
-                      {/* The Share Button */}
+                      {/* Phase 3 - The Share Button */}
                       <button 
                         onClick={() => handleShare(post.id, post.url, post.headline)}
                         className="flex items-center space-x-1 text-gray-400 hover:text-blue-400 transition-colors group relative"

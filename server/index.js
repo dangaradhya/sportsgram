@@ -3,11 +3,15 @@
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose(); // verbose() gives us detailed error stack traces
 const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // 2. INITIALIZATION
 // This creates our application instance. Think of this like initializing your Axum router in Rust.
 const app = express();
 const PORT = 3000; // The port our server will listen on
+// In production, this lives in a .env file. We hardcode it here for development.
+const JWT_SECRET = 'sportsgram_super_secret_key_2026';
 
 // 3. MIDDLEWARE
 // Middleware are functions that intercept incoming HTTP requests before they hit your routes.
@@ -26,7 +30,7 @@ const db = new sqlite3.Database('./sportsgram.sqlite', (err) => {
     } else {
         console.log('Connected to the SQLite database.');
         
-        // 5. TABLE CREATION - UPGRADED WITH TOKEN DEFENSE
+        // TABLE CREATION - UPGRADED WITH TOKEN DEFENSE
         // Once connected, we execute a SQL command to ensure our schema exists.
         // Added the 'url' column as UNIQUE to prevent duplicate AI processing.
         db.run(`
@@ -44,7 +48,86 @@ const db = new sqlite3.Database('./sportsgram.sqlite', (err) => {
             if (err) console.error('Error creating table:', err.message);
             else console.log('Posts table ready.');
         });
+
+        // Create the users table for authentication. This will store usernames and hashed passwords.
+        db.run(`
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `, (err) => {
+            if (err) console.error('Error creating users table:', err.message);
+            else console.log('Users table ready.');
+        });
     }
+});
+
+// 5. AUTHENTICATION ROUTES 
+
+// Route A: Registration
+app.post('/api/register', async (req, res) => {
+    const { username, password } = req.body;
+
+    // Basic validation: Check if the username and password are provided and meet criteria.
+    if (!username || !password || password.length < 6) {
+        return res.status(400).json({ error: 'Username and a 6+ char password are required' });
+    }
+
+    try {
+        // We "salt" and hash the password. The '10' is the cost factor (how many rounds of hashing).
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // Insert the user into the database with the scrambled password
+        db.run(`INSERT INTO users (username, password_hash) VALUES (?, ?)`, [username, hashedPassword], function(err) {
+            if (err) {
+                // SQLite error code 19 usually means UNIQUE constraint failed (username taken)
+                if (err.message.includes('UNIQUE')) {
+                    return res.status(409).json({ error: 'Username already exists' });
+                }
+                return res.status(500).json({ error: 'Database error during registration' });
+            }
+            res.status(201).json({ message: 'User created successfully', userId: this.lastID });
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error during hashing' });
+    }
+});
+
+// Route B: Login
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+
+    // First, find the user in the database
+    db.get(`SELECT * FROM users WHERE username = ?`, [username], async (err, user) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        
+        // If no user is found with that username, we return a 401 Unauthorized. 
+        // We don't specify whether it was the username or password that was wrong to avoid giving hints to attackers.
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid username or password' }); // We keep errors vague for security
+        }
+
+        // Use bcrypt to check if the typed password matches the stored hash
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+        
+        // If it doesn't match, we return the same 401 Unauthorized error. Again, we don't specify which part was wrong.
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Invalid username or password' });
+        }
+
+        // If it matches, generate a JWT token. This token proves the user is logged in.
+        const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
+
+        // Send the token back to the frontend
+        res.status(200).json({ 
+            message: 'Login successful', 
+            token: token,
+            username: user.username 
+        });
+    });
 });
 
 // 6. ROUTING (The API Endpoints)
