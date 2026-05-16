@@ -98,18 +98,24 @@ app.post('/api/posts', (req, res) => {
 // 9. READING DATA (The GET Route - 'read operation')
 // Big Picture: When a user opens Sportsgram on their phone or laptop, the UI is completely empty. 
 // The frontend immediately fires off a GET request to your server asking for the latest data to display.
+// 9. READING DATA (Upgraded with Phase 2 Pagination)
 app.get('/api/posts', (req, res) => {
-    // We write a SQL query to get everything, ordering by newest first.
-    const sql = `SELECT * FROM posts ORDER BY timestamp DESC LIMIT 50`;
+    // Extract query parameters with fallbacks (default to page 1, limit 5)
+    // We use a small limit of 5 so you can easily test the "Load More" button!
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    
+    // 2. Calculate the offset (e.g., if page 2 and limit 5, skip the first 5 records)
+    const offset = (page - 1) * limit;
 
-    // db.all is used when we expect multiple rows to be returned.
-    db.all(sql, [], (err, rows) => {
+    // 3. Inject LIMIT and OFFSET into the SQL query
+    const sql = `SELECT * FROM posts ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
+
+    db.all(sql, [limit, offset], (err, rows) => {
         if (err) {
             console.error("Error fetching data:", err.message);
             return res.status(500).json({ error: 'Failed to retrieve feed' });
         }
-        
-        // We send the array of database rows back to the frontend as a clean JSON array.
         res.status(200).json(rows);
     });
 });

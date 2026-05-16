@@ -12,36 +12,54 @@ export default function Home() {
   // 2. STATE MANAGEMENT
   // Think of state as variables that, when updated, automatically redraw the screen.
   // 'posts' holds the array of data from SQLite. 'loading' gives us a cool UI state.
-  // CHANGE ADDED: explicitly defining type as any[] to prevent TypeScript errors.
+  // Explicitly defining type as any[] to prevent TypeScript errors.
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState<string>('All'); // New state for category filter
 
-  // 3. THE NETWORK REQUEST (Upgraded with Polling)
-  useEffect(() => {
-    // We wrap our fetch logic in a function so we can call it repeatedly
-    const fetchPosts = () => {
-      fetch('http://localhost:3000/api/posts')
-        .then((res) => res.json())
-        .then((data) => {
-          setPosts(data);
-          setLoading(false);
-        })
-        .catch((err) => {
-          console.error("Error fetching posts:", err);
-          setLoading(false);
+  // Pagination State
+  const [page, setPage] = useState(1); // Tracks current page
+  const [hasMore, setHasMore] = useState(true); // Turns off the button when we hit the end of the DB
+  const [loadingMore, setLoadingMore] = useState(false); // Spinner for the Load More button
+
+  // 3. THE NETWORK REQUEST 
+  // Refactored Fetch Logic to accept a page number
+  const fetchPosts = async (pageNum: number) => {
+    try {
+      // We now pass the page parameter to our Express API
+      const res = await fetch(`http://localhost:3000/api/posts?page=${pageNum}&limit=5`);
+      const data = await res.json();
+
+      if (data.length === 0) {
+        // If the database returns an empty array, we reached the end!
+        setHasMore(false);
+      } else {
+        // Append the new data to the EXISTING array, rather than replacing it.
+        // We use a quick filter to ensure React's StrictMode doesn't accidentally render duplicate IDs.
+        setPosts(prevPosts => {
+          const newPosts = [...prevPosts];
+          data.forEach((newPost: any) => {
+            if (!newPosts.find(p => p.id === newPost.id)) {
+              newPosts.push(newPost);
+            }
+          });
+          return newPosts;
         });
-    };
+      }
+      setLoading(false);
+      setLoadingMore(false);
+    } catch (err) {
+      console.error("Error fetching posts:", err);
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
 
-    // Fetch immediately when the page first loads
-    fetchPosts();
-
-    // Set up a background timer to fetch again every 30 seconds (30000 milliseconds)
-    const intervalId = setInterval(fetchPosts, 30000);
-
-    // Cleanup function: If the user closes the tab, we stop the timer to save memory
-    return () => clearInterval(intervalId);
-  }, []);
+  // Replaced the interval with a page dependency
+  // This runs automatically on initial load (page=1), and whenever the 'page' state changes.
+  useEffect(() => {
+    fetchPosts(page);
+  }, [page]);
 
   // 4. THE LIKE FUNCTION
   // This function handles the user clicking the heart button.
@@ -84,7 +102,7 @@ export default function Home() {
         </h1>
 
         {/* 6. CONDITIONAL RENDERING */}
-        {loading ? (
+        {loading && page === 1 ? (
           // Show this while waiting for the Express server to reply
           <p className="text-center text-gray-400 animate-pulse">Loading the latest news...</p>
         ) : posts.length === 0 ? (
@@ -176,6 +194,26 @@ export default function Home() {
                 </div>
               ))}
             </div>
+
+            {/* The Load More Button UI */}
+            {hasMore && (
+              <div className="mt-10 flex justify-center">
+                <button
+                  onClick={() => {
+                    setLoadingMore(true);
+                    setPage(prevPage => prevPage + 1);
+                  }}
+                  disabled={loadingMore}
+                  className="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold rounded-full border border-gray-700 transition-all disabled:opacity-50"
+                >
+                  {loadingMore ? 'Loading...' : 'Load More News'}
+                </button>
+              </div>
+            )}
+            
+            {!hasMore && posts.length > 0 && (
+              <p className="text-center text-gray-500 mt-10 text-sm font-medium">You have reached the end of the feed.</p>
+            )}
           </>
         )}
       </div>
