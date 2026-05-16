@@ -37,6 +37,7 @@ const db = new sqlite3.Database('./sportsgram.sqlite', (err) => {
                 content TEXT,
                 excitement_level INTEGER,
                 url TEXT UNIQUE,
+                likes INTEGER DEFAULT 0, 
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         `, (err) => {
@@ -113,7 +114,30 @@ app.get('/api/posts', (req, res) => {
     });
 });
 
-// 7. SERVER BINDING
+// 10. UPDATING DATA (The PUT Route - the 'update' operation)
+// This listens for requests to /api/posts/1/like, /api/posts/2/like, etc.
+app.put('/api/posts/:id/like', (req, res) => {
+    const postId = req.params.id; // Grab the ID from the URL
+
+    // We use a SQL UPDATE command to increment the current like count by 1
+    const sql = `UPDATE posts SET likes = likes + 1 WHERE id = ?`;
+
+    db.run(sql, [postId], function(err) {
+        if (err) {
+            console.error("Error updating likes:", err.message);
+            return res.status(500).json({ error: 'Failed to add like' });
+        }
+        
+        // 'this.changes' tells us how many rows were affected. If 0, the post doesn't exist.
+        if (this.changes === 0) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+
+        res.status(200).json({ message: 'Like added successfully!' });
+    });
+});
+
+// 11. SERVER BINDING
 // Finally, we tell the Express app to bind to the port and start listening for traffic.
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
