@@ -22,6 +22,10 @@ export default function Home() {
   const [hasMore, setHasMore] = useState(true); // Turns off the button when we hit the end of the DB
   const [loadingMore, setLoadingMore] = useState(false); // Spinner for the Load More button
 
+  // Share State
+  // We track the ID of the post that was copied to show a temporary "Copied!" tooltip
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
   // 3. THE NETWORK REQUEST 
   // Refactored Fetch Logic to accept a page number
   const fetchPosts = async (pageNum: number) => {
@@ -77,6 +81,31 @@ export default function Home() {
       });
     } catch (error) {
       console.error("Failed to update like in database:", error);
+    }
+  };
+
+  // THE SHARE FUNCTION
+  const handleShare = async (id: number, url: string, headline: string) => {
+    if (navigator.share) {
+      // Native Mobile Share
+      try {
+        await navigator.share({
+          title: 'Sportsgram',
+          text: `Check out this news: ${headline}`,
+          url: url,
+        });
+      } catch (err) {
+        console.error("Error sharing natively:", err);
+      }
+    } else {
+      // Desktop Fallback: Copy to Clipboard
+      try {
+        await navigator.clipboard.writeText(url);
+        setCopiedId(id); // Trigger the "Copied!" tooltip
+        setTimeout(() => setCopiedId(null), 2000); // Hide tooltip after 2 seconds
+      } catch (err) {
+        console.error("Failed to copy to clipboard:", err);
+      }
     }
   };
 
@@ -164,7 +193,7 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* Right Side: Like Button and Read Source Link */}
+                    {/* Right Side: Like Button, Share Button, and Read Source Link */}
                     <div className="flex items-center space-x-6">
                       
                       {/* The Like Button */}
@@ -178,6 +207,25 @@ export default function Home() {
                         </svg>
                         {/* Fallback to 0 if post.likes is undefined/null */}
                         <span className="text-sm font-semibold">{post.likes || 0}</span>
+                      </button>
+
+                      {/* The Share Button */}
+                      <button 
+                        onClick={() => handleShare(post.id, post.url, post.headline)}
+                        className="flex items-center space-x-1 text-gray-400 hover:text-blue-400 transition-colors group relative"
+                        title="Share this post"
+                      >
+                        {/* SVG Share Icon */}
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 group-active:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                        
+                        {/* Dynamic Tooltip: Only shows if this specific post was copied */}
+                        {copiedId === post.id && (
+                          <span className="absolute -top-10 -left-4 bg-gray-700 text-white text-xs font-semibold px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap animate-pulse">
+                            Copied!
+                          </span>
+                        )}
                       </button>
 
                       <a 
