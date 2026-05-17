@@ -16,10 +16,10 @@ const NEWS_SOURCES = [
     { name: 'ESPN', url: 'https://www.espn.com/espn/rss/news' }
 ];
 
-// YouTube channels for the Reels pipeline (e.g., Sky Sports Premier League, ESPN)
+// YouTube channels routed through public RSS-Bridge instances to bypass the 15-video limit
 const REELS_SOURCES = [
-    { name: 'SkySports PL', url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCNAf1k0yIjyGu3k9BwAg3lg' },
-    { name: 'ESPN', url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCiWLfSweyRNmLpgEHekhoAg' }
+    { name: 'CBS Sports Golazo', url: 'https://rss-bridge.org/bridge01/?action=display&bridge=Youtube&context=By+channel+id&c=UCET00YnetHT7tOpu12v8jxg&format=Mrss' },
+    { name: 'ESPN', url: 'https://rss-bridge.org/bridge01/?action=display&bridge=Youtube&context=By+channel+id&c=UCiWLfSweyRNmLpgEHekhoAg&format=Mrss' }
 ];
 
 // This is the URL of the Express API endpoint where we will POST the formatted articles to be saved in the database
@@ -31,7 +31,23 @@ const CHECK_URL = 'http://localhost:3000/api/posts/check';
 const REELS_API_URL = 'http://localhost:3000/api/reels';
 const REELS_CHECK_URL = 'http://localhost:3000/api/reels/check';
 
-// 2. THE AI REWRITE FUNCTION
+// 2. The "Is it a Short?" Network Trick
+// This pings YouTube's servers. If YouTube redirects the /shorts/ URL to a standard /watch/ URL, it's a long-form video.
+async function isYouTubeShort(videoId) {
+    // We make a HEAD request to the /shorts/ URL, which is a lightweight way to check if the video exists in that format without downloading the whole page.
+    try {
+        const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, {
+            method: 'HEAD',
+            redirect: 'manual' // We tell node.js NOT to follow redirects so we can read the 300-level status code
+        });
+        // A status of 200 means the /shorts/ URL is valid and it is a vertical video!
+        return res.status === 200;
+    } catch (error) {
+        return false;
+    }
+}
+
+// 3. THE AI REWRITE FUNCTION
 // This function takes the boring RSS text and uses Gemini to transform it into strict JSON.
 // Handles an ARRAY of articles for Batch Processing (Token Defense).
 async function batchFormatWithGemini(articlesArray) {
@@ -68,7 +84,7 @@ async function batchFormatWithGemini(articlesArray) {
     }
 }
 
-// 3. THE IMAGE SCRAPER FUNCTION
+// 4. THE IMAGE SCRAPER FUNCTION
 async function extractOgImage(articleUrl) {
 
     // We fetch the article's HTML and use Cheerio to look for the Open Graph image tag, which is commonly used for social media previews. 
@@ -91,7 +107,7 @@ async function extractOgImage(articleUrl) {
     }
 }
 
-// 4. THE MAIN INGESTION LOOP
+// 5. THE MAIN INGESTION LOOP
 async function runIngestionPipeline() {
     // Added a timestamp to the log so we can track the cron jobs
     console.log(`\n📡 [${new Date().toLocaleTimeString()}] Fetching live sports news...`);
@@ -200,12 +216,16 @@ async function runIngestionPipeline() {
     console.log(`\n🏁 Ingestion cycle complete!`);
 }
 
-// 5. THE REELS PIPELINE 
+// 6. THE REELS PIPELINE 
 async function runReelsPipeline() {
     // Similar structure to the main pipeline, but focused on fetching YouTube video data
     // and saving it to a separate "reels" collection in the database.
     console.log(`\n🎬 [${new Date().toLocaleTimeString()}] Fetching live video reels...`);
     
+    // Trackers for our new Deduplication Gatekeeper
+    let totalReelsGathered = 0;
+    let newReelsSaved = 0;
+
     // We loop through each YouTube channel source
     for (const source of REELS_SOURCES) {
         try {
@@ -215,8 +235,9 @@ async function runReelsPipeline() {
             // which gives us structured data about the latest videos.
             const feed = await parser.parseURL(source.url);
             
-            // Grab the latest 5 videos from the channel
-            const topVideos = feed.items.slice(0, 5); 
+            // RSS-Bridge bypasses the 15-item limit, so we can safely pull 50 videos
+            const topVideos = feed.items.slice(0, 50); 
+            totalReelsGathered += topVideos.length;
 
             for (const video of topVideos) {
                 // YouTube RSS links look like: https://www.youtube.com/watch?v=dQw4w9WgXcQ
@@ -225,6 +246,13 @@ async function runReelsPipeline() {
                 const videoId = videoUrl.searchParams.get('v');
 
                 if (!videoId) continue;
+
+                // Validate that this is actually a vertical Short!
+                const isShort = await isYouTubeShort(videoId);
+                if (!isShort) {
+                    // We skip it and move to the next iteration of the loop
+                    continue; 
+                }
 
                 // DEFENSE: Check if video is already in database, which prevents us from saving duplicates
                 const checkRes = await fetch(REELS_CHECK_URL, {
@@ -252,6 +280,7 @@ async function runReelsPipeline() {
                     });
                     
                     if (dbResponse.ok) {
+                        newReelsSaved++;
                         console.log(`   💾 Saved New Reel: ${video.title}`);
                     }
                 }
@@ -260,6 +289,12 @@ async function runReelsPipeline() {
             console.error(`   ⚠️ Failed to fetch reels from ${source.name}:`, err.message);
         }
     }
+
+    // Deduplication Gatekeeper log for Reels
+    if (newReelsSaved === 0) {
+        console.log(`🛡️ Gate closed: All ${totalReelsGathered} reels already in database.`);
+    }
+
     console.log(`🏁 Reels ingestion cycle complete!`);
 }
 
