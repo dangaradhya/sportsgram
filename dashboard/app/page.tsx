@@ -7,6 +7,7 @@
 "use client";
 
 import { useEffect, useState, SyntheticEvent } from 'react';
+import Link from 'next/link';
 
 export default function Home() {
   // 2. STATE MANAGEMENT
@@ -270,7 +271,7 @@ export default function Home() {
         
         {/* Header Section */}
         {/* Authentication Phase - Updated Header Layout with User Profile */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-4"> 
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
             Sportsgram
           </h1>
@@ -298,6 +299,16 @@ export default function Home() {
               </button>
             )}
           </div>
+        </div>
+
+        {/* Navigation Section */}
+        <div className="flex justify-center space-x-8 mb-8">
+          <span className="text-white font-bold text-lg border-b-2 border-purple-500 pb-1">
+            Posts
+          </span>
+          <Link href="/reels" className="text-gray-400 font-bold text-lg hover:text-white transition-colors">
+            Reels
+          </Link>
         </div>
 
         {/* 7. CONDITIONAL RENDERING */}

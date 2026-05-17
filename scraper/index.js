@@ -10,16 +10,26 @@ const parser = new Parser();
 // Initialize the Gemini Client
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Multi-Source Scaling - Upgraded from a single string to an array of feeds
+// News sources for the main pipeline (e.g., Sky Sports, ESPN)
 const NEWS_SOURCES = [
     { name: 'SkySports', url: 'https://www.skysports.com/rss/12040' },
     { name: 'ESPN', url: 'https://www.espn.com/espn/rss/news' }
 ];
 
-// This is the URL of your Express API that we built earlier
+// YouTube channels for the Reels pipeline (e.g., Sky Sports Premier League, ESPN)
+const REELS_SOURCES = [
+    { name: 'SkySports PL', url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCNAf1k0yIjyGu3k9BwAg3lg' },
+    { name: 'ESPN', url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCiWLfSweyRNmLpgEHekhoAg' }
+];
+
+// This is the URL of the Express API endpoint where we will POST the formatted articles to be saved in the database
 const SPORTSGRAM_API_URL = 'http://localhost:3000/api/posts'; 
 // The URL of our new Deduplication Gate route on the Express Server
 const CHECK_URL = 'http://localhost:3000/api/posts/check';
+
+// URLs for the Reels pipeline
+const REELS_API_URL = 'http://localhost:3000/api/reels';
+const REELS_CHECK_URL = 'http://localhost:3000/api/reels/check';
 
 // 2. THE AI REWRITE FUNCTION
 // This function takes the boring RSS text and uses Gemini to transform it into strict JSON.
@@ -190,11 +200,76 @@ async function runIngestionPipeline() {
     console.log(`\n🏁 Ingestion cycle complete!`);
 }
 
+// 5. THE REELS PIPELINE 
+async function runReelsPipeline() {
+    // Similar structure to the main pipeline, but focused on fetching YouTube video data
+    // and saving it to a separate "reels" collection in the database.
+    console.log(`\n🎬 [${new Date().toLocaleTimeString()}] Fetching live video reels...`);
+    
+    // We loop through each YouTube channel source
+    for (const source of REELS_SOURCES) {
+        try {
+            console.log(`   -> Fetching videos from ${source.name}...`);
+
+            // We use the same RSS parser to read the YouTube channel's video feed, 
+            // which gives us structured data about the latest videos.
+            const feed = await parser.parseURL(source.url);
+            
+            // Grab the latest 5 videos from the channel
+            const topVideos = feed.items.slice(0, 5); 
+
+            for (const video of topVideos) {
+                // YouTube RSS links look like: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+                // We need to extract just the ID at the end using URLSearchParams
+                const videoUrl = new URL(video.link);
+                const videoId = videoUrl.searchParams.get('v');
+
+                if (!videoId) continue;
+
+                // DEFENSE: Check if video is already in database, which prevents us from saving duplicates
+                const checkRes = await fetch(REELS_CHECK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ video_id: videoId })
+                });
+
+                // The Express server will respond with { exists: true/false }
+                const { exists } = await checkRes.json();
+                
+                if (!exists) {
+                    // Send directly to the database 
+                    const payload = {
+                        video_id: videoId,
+                        title: video.title,
+                        channel_name: source.name
+                    };
+                    
+                    // We send a POST request to our Express server's /api/reels endpoint to save the new reel
+                    const dbResponse = await fetch(REELS_API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (dbResponse.ok) {
+                        console.log(`   💾 Saved New Reel: ${video.title}`);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error(`   ⚠️ Failed to fetch reels from ${source.name}:`, err.message);
+        }
+    }
+    console.log(`🏁 Reels ingestion cycle complete!`);
+}
+
 // DEFENSE 3 - STRATEGIC PACING
-// Execute the pipeline once immediately on startup...
+// Execute both pipeline once immediately on startup...
 runIngestionPipeline();
+runReelsPipeline();
 
 // ...then schedule it to run automatically every 1 hour in the background
 cron.schedule('0 * * * *', () => {
     runIngestionPipeline();
+    runReelsPipeline();
 });

@@ -30,7 +30,7 @@ const db = new sqlite3.Database('./sportsgram.sqlite', (err) => {
     } else {
         console.log('Connected to the SQLite database.');
         
-        // TABLE CREATION - UPGRADED WITH TOKEN DEFENSE
+        // TABLE 1: Posts (Articles)
         // Once connected, we execute a SQL command to ensure our schema exists.
         // Added the 'url' column as UNIQUE to prevent duplicate AI processing.
         db.run(`
@@ -50,7 +50,7 @@ const db = new sqlite3.Database('./sportsgram.sqlite', (err) => {
             else console.log('Posts table ready.');
         });
 
-        // Create the users table for authentication. This will store usernames and hashed passwords.
+        // Table 2: Users (Authentication) This will store usernames and hashed passwords.
         db.run(`
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,6 +61,20 @@ const db = new sqlite3.Database('./sportsgram.sqlite', (err) => {
         `, (err) => {
             if (err) console.error('Error creating users table:', err.message);
             else console.log('Users table ready.');
+        });
+
+        // TABLE 3: Reels (Videos)
+        db.run(`
+            CREATE TABLE IF NOT EXISTS reels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT UNIQUE NOT NULL, 
+                title TEXT,
+                channel_name TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `, (err) => {
+            if (err) console.error('Error creating reels table:', err.message);
+            else console.log('Reels table ready.');
         });
     }
 });
@@ -182,7 +196,7 @@ app.post('/api/posts', (req, res) => {
 // 9. READING DATA (The GET Route - 'read operation')
 // Big Picture: When a user opens Sportsgram on their phone or laptop, the UI is completely empty. 
 // The frontend immediately fires off a GET request to your server asking for the latest data to display.
-// 9. READING DATA (Upgraded with Phase 2 Pagination)
+// Upgraded with Phase 2 Pagination and Sorting by Timestamp (Newest First)
 app.get('/api/posts', (req, res) => {
     // Extract query parameters with fallbacks (default to page 1, limit 5)
     // We use a small limit of 5 so you can easily test the "Load More" button!
@@ -227,7 +241,53 @@ app.put('/api/posts/:id/like', (req, res) => {
     });
 });
 
-// 11. SERVER BINDING
+// 11. REELS ROUTES (Videos)
+
+// These routes follow the same pattern as the posts routes. 
+// We have a check route to prevent duplicates, a POST route to create new reels, 
+// and a GET route to retrieve them with pagination. The main difference is that 
+// reels are simpler objects (just video_id, title, and channel_name) compared to the rich article posts.
+app.post('/api/reels/check', (req, res) => {
+    const { video_id } = req.body;
+    db.get(`SELECT id FROM reels WHERE video_id = ?`, [video_id], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ exists: !!row }); 
+    });
+});
+
+// The video_id is the unique identifier for YouTube videos (the string in the URL after 'v=').
+// For example, in https://www.youtube.com/watch?v=dQw4w9WgXcQ, the video_id is 'dQw4w9WgXcQ'.
+// The title and channel_name are just metadata to display in the UI.
+// We could expand this later to include things like thumbnail URLs, view counts, etc.
+// This is the POST route (save reels to the database) that the scraper will hit when it finds a new sports highlight 
+// reel to save in the database.
+app.post('/api/reels', (req, res) => {
+    const { video_id, title, channel_name } = req.body;
+    if (!video_id || !title) return res.status(400).json({ error: 'Missing required video fields' });
+
+    const sql = `INSERT INTO reels (video_id, title, channel_name) VALUES (?, ?, ?)`;
+    db.run(sql, [video_id, title, channel_name], function(err) {
+        if (err) return res.status(500).json({ error: 'Failed to save reel' });
+        res.status(201).json({ message: 'Reel saved!', reelId: this.lastID });
+    });
+});
+
+// This GET route retrieves reels with pagination, similar to the posts route, essentially
+// fetching reels for the Next.js frontend to display in the reels section.
+app.get('/api/reels', (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    // We limit this to 3 per page because embedded iframes are memory heavy!
+    const limit = parseInt(req.query.limit) || 3; 
+    const offset = (page - 1) * limit;
+    
+    const sql = `SELECT * FROM reels ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
+    db.all(sql, [limit, offset], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to retrieve reels' });
+        res.status(200).json(rows);
+    });
+});
+
+// 12. SERVER BINDING
 // Finally, we tell the Express app to bind to the port and start listening for traffic.
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
