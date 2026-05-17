@@ -184,6 +184,8 @@ async function runIngestionPipeline() {
                 console.error(`🔌 Network Error: Could not reach Express server.`, networkError.message);
             }
         }
+    } else {
+        console.log(`⚠️ AI returned an empty or invalid batch.`);
     }
     console.log(`\n🏁 Ingestion cycle complete!`);
 }
