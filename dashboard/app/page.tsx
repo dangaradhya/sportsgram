@@ -6,7 +6,7 @@
 // allowing us to use React hooks like useState and useEffect.
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, SyntheticEvent } from 'react';
 
 export default function Home() {
   // 2. STATE MANAGEMENT
@@ -27,10 +27,9 @@ export default function Home() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
 
   // Authentication Phase - User & Modal State
-  // 'user' holds the current logged-in user's info (or null if not logged in).
-  // 'showAuthModal' controls whether the login/register modal is visible.
-  // 'authMode' toggles between 'login' and 'register' forms. 'authForm' holds the form input values. 
-  // 'authError' and 'authLoading' manage the UI state during authentication.
+  // We store the logged-in user's info (username and token) in 'user'. If 'user' is null, no one is logged in.
+  // 'showAuthModal' controls whether the Login/Register modal is visible. 'authMode' toggles between the two forms.
+  // 'authForm' holds the input values for username and password. 'authError' and 'authLoading' manage the form's feedback states.
   const [user, setUser] = useState<{ username: string, token: string } | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -86,14 +85,13 @@ export default function Home() {
   }, [page]);
 
   // Authentication Phase - Handle form submission for Login/Register
-  const handleAuthSubmit = async (e: React.SyntheticEvent) => {
-
-    // Set loading state and clear previous errors
+  const handleAuthSubmit = async (e: SyntheticEvent) => {
+    // Setup the form for submission: clear errors, show loading state
     e.preventDefault();
     setAuthError('');
     setAuthLoading(true);
 
-    // Depending on whether we're in 'login' or 'register' mode, we send the form data to the appropriate Express endpoint.
+    // Determine the API endpoint based on whether we're logging in or registering
     try {
       const res = await fetch(`http://localhost:3000/api/${authMode}`, {
         method: 'POST',
@@ -101,13 +99,13 @@ export default function Home() {
         body: JSON.stringify(authForm)
       });
       
-      // We expect the Express server to return a JSON object with either an 'error' field (if something went wrong) or 'username' and 'token' fields (if successful).
+      // We expect the response to include a 'username' and 'token' on successful login, or a success message on registration.
       const data = await res.json();
       
       if (!res.ok) throw new Error(data.error || 'Authentication failed');
 
-      // If we're in register mode and it's successful, we switch to login mode and prompt the user to log in. 
-      // If we're in login mode and it's successful, we save the session and close the modal.
+      // If we're registering, we want to switch to the login form and prompt the user to log in. 
+      // If we're logging in, we save the session and close the modal.
       if (authMode === 'register') {
         // Switch to login mode and show success message
         setAuthMode('login');
@@ -157,7 +155,7 @@ export default function Home() {
     }
   };
 
-  // THE SHARE FUNCTION
+  // 5. THE SHARE FUNCTION
   const handleShare = async (id: number, url: string, headline: string) => {
     if (navigator.share) {
       // Native Mobile Share
@@ -182,7 +180,7 @@ export default function Home() {
     }
   };
 
-  // 5. DYNAMIC CATEGORY EXTRACTION
+  // 6. DYNAMIC CATEGORY EXTRACTION
   // - We extract all categories from the posts array.
   // - We use 'new Set()' to remove duplicates (so if there are 5 Football posts, 'Football' only appears once).
   // - We prepend 'All' to the front of the array. 
@@ -197,7 +195,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gray-950 text-white p-4 md:p-8 relative">
       
-      {/* CHANGE ADDED: Authentication Phase - The Auth Modal Overlay */}
+      {/* Authentication Phase - The Auth Modal Overlay */}
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-md shadow-2xl relative">
@@ -302,7 +300,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 6. CONDITIONAL RENDERING */}
+        {/* 7. CONDITIONAL RENDERING */}
         {loading && page === 1 ? (
           // Show this while waiting for the Express server to reply
           <p className="text-center text-gray-400 animate-pulse mt-20">Loading the latest news...</p>
@@ -328,11 +326,11 @@ export default function Home() {
               ))}
             </div>
 
-            {/* 7. MAPPING THE DATA */}
+            {/* 8. MAPPING THE DATA */}
             {/* We now loop through 'filteredPosts' instead of 'posts' */}
             <div className="space-y-6">
               {filteredPosts.map((post: any) => (
-                <div key={post.id} className="bg-gray-900 border border-gray-800 rounded-xl p-6 shadow-lg hover:border-gray-700 transition-colors">
+                <div key={post.id} className="bg-gray-900 border border-gray-800 rounded-xl p-6 shadow-lg hover:border-gray-700 transition-colors group overflow-hidden">
                   
                   {/* Top Row: Category Badge and Timestamp */}
                   <div className="flex justify-between items-center mb-4">
@@ -343,6 +341,19 @@ export default function Home() {
                       {new Date(post.timestamp).toLocaleDateString()}
                     </span>
                   </div>
+
+                  {/* Image Rendering Phase - The actual image container! */}
+                  {/* We use standard img tag, set a fixed height for consistency, and add a hover scale effect */}
+                  {post.image_url && (
+                    <div className="w-full h-48 md:h-64 rounded-xl overflow-hidden mb-5 bg-gray-800 relative">
+                      <img 
+                        src={post.image_url} 
+                        alt={post.headline}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-in-out"
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
 
                   {/* Main Content: AI Generated Headline & Summary */}
                   <h2 className="text-xl font-bold mb-3">{post.headline}</h2>

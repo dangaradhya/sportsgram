@@ -41,6 +41,7 @@ const db = new sqlite3.Database('./sportsgram.sqlite', (err) => {
                 content TEXT,
                 excitement_level INTEGER,
                 url TEXT UNIQUE,
+                image_url TEXT,
                 likes INTEGER DEFAULT 0, 
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -155,7 +156,7 @@ app.post('/api/posts/check', (req, res) => {
 // When your scraper grabs a new article from the web and Gemini formats it, the scraper needs a way to hand that 
 // data over to the database. It packages the data into a JSON payload and sends it via a POST request.
 app.post('/api/posts', (req, res) => {
-    const { sport_category, headline, content, excitement_level, url } = req.body;
+    const { sport_category, headline, content, excitement_level, url, image_url } = req.body;
 
     // Basic validation: Check if the request is missing any data.
     if (!sport_category || !headline || !content || !excitement_level || !url) {
@@ -166,10 +167,10 @@ app.post('/api/posts', (req, res) => {
     // values as data rather than executable code. When we call db.run, we pass an array of values that correspond to each question
     // mark in the SQL string. The database engine safely substitutes these values into the query, ensuring that any malicious input 
     // is not executed as part of the SQL command.
-    const sql = `INSERT INTO posts (sport_category, headline, content, excitement_level, url) 
-                 VALUES (?, ?, ?, ?, ?)`;
+    const sql = `INSERT INTO posts (sport_category, headline, content, excitement_level, url, image_url) 
+                 VALUES (?, ?, ?, ?, ?, ?)`;
 
-    db.run(sql, [sport_category, headline, content, excitement_level, url], function(err) {
+    db.run(sql, [sport_category, headline, content, excitement_level, url, image_url], function(err) {
         if (err) {
             console.error("Error inserting data:", err.message);
             return res.status(500).json({ error: 'Failed to save post to database' });

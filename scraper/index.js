@@ -1,5 +1,6 @@
 // 1. IMPORTS & CONFIGURATION
 require('dotenv').config(); // Loads your GEMINI_API_KEY from the .env file
+const cheerio = require('cheerio');
 const Parser = require('rss-parser');
 // Import node-cron for Strategic Pacing (Token Defense)
 const cron = require('node-cron'); 
@@ -52,7 +53,30 @@ async function batchFormatWithGemini(articlesArray) {
     }
 }
 
-// 3. THE MAIN INGESTION LOOP
+// 3. THE IMAGE SCRAPER FUNCTION
+async function extractOgImage(articleUrl) {
+
+    // We fetch the article's HTML and use Cheerio to look for the Open Graph image tag, which is commonly used for social media previews. 
+    // If we find it, we return that URL. If not, we return a cool fallback image URL.
+    try {
+        const response = await fetch(articleUrl);
+        const html = await response.text();
+        
+        // Load the HTML into Cheerio so we can query it like the browser DOM
+        const $ = cheerio.load(html);
+        
+        // Look for the Open Graph image tag
+        const ogImage = $('meta[property="og:image"]').attr('content');
+        
+        // Return the image, or a cool fallback image if the article has none
+        return ogImage || 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?q=80&w=1000&auto=format&fit=crop';
+    } catch (error) {
+        console.error(`Failed to fetch image for ${articleUrl}:`, error.message);
+        return 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?q=80&w=1000&auto=format&fit=crop';
+    }
+}
+
+// 4. THE MAIN INGESTION LOOP
 async function runIngestionPipeline() {
     // Added a timestamp to the log so we can track the cron jobs
     console.log(`\n📡 [${new Date().toLocaleTimeString()}] Fetching live sports news...`);
@@ -97,7 +121,7 @@ async function runIngestionPipeline() {
 
     console.log(`\n🧠 Sending batch of ${newArticlesToProcess.length} new articles to AI...`);
     
-    // 1. Pass data to Gemini (Now passing the filtered batch array)
+    // Pass data to Gemini (Now passing the filtered batch array)
     const aiFormattedPosts = await batchFormatWithGemini(newArticlesToProcess);
     
     if (aiFormattedPosts && aiFormattedPosts.length > 0) {
@@ -105,13 +129,28 @@ async function runIngestionPipeline() {
         
         // Loop through the returned AI array to save each post individually
         for (const post of aiFormattedPosts) {
-            // 2. Send the AI's output to our Express Server via an HTTP POST request
+            
+            // Fetch the image directly from the source article!
+            const articleImageUrl = await extractOgImage(post.url);
+
+            // Add it to the payload alongside Gemini's data
+            const payload = {
+                sport_category: post.sport_category,
+                headline: post.headline,
+                content: post.content,
+                excitement_level: post.excitement_level,
+                url: post.url,
+                image_url: articleImageUrl
+            };
+
+            // Send the AI's output to our Express Server via an HTTP POST request
             // This is the built-in Node.js fetch API 
             try {
                 const dbResponse = await fetch(SPORTSGRAM_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(post) // Convert the JS object back to a JSON string
+                    // We now stringify the new 'payload' object instead of just 'post'
+                    body: JSON.stringify(payload) 
                 });
 
                 if (dbResponse.ok) {
