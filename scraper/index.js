@@ -10,7 +10,12 @@ const parser = new Parser();
 // Initialize the Gemini Client
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-const RSS_FEED_URL = 'https://www.skysports.com/rss/12040';
+// Multi-Source Scaling - Upgraded from a single string to an array of feeds
+const NEWS_SOURCES = [
+    { name: 'SkySports', url: 'https://www.skysports.com/rss/12040' },
+    { name: 'ESPN', url: 'https://www.espn.com/espn/rss/news' }
+];
+
 // This is the URL of your Express API that we built earlier
 const SPORTSGRAM_API_URL = 'http://localhost:3000/api/posts'; 
 // The URL of our new Deduplication Gate route on the Express Server
@@ -80,18 +85,34 @@ async function extractOgImage(articleUrl) {
 async function runIngestionPipeline() {
     // Added a timestamp to the log so we can track the cron jobs
     console.log(`\n📡 [${new Date().toLocaleTimeString()}] Fetching live sports news...`);
-    const feed = await parser.parseURL(RSS_FEED_URL);
-    // Increased slice from 1 to 5 since we are safely batching with the AI now (Token Defense)
-    const topArticles = feed.items.slice(0, 5); 
+    
+    // Multi-Source Scaling - The Gather Phase
+    let allTopArticles = [];
+    
+    // We loop through each of our sources (SkySports, ESPN, etc.)
+    for (const source of NEWS_SOURCES) {
+        try {
+            console.log(`   -> Fetching from ${source.name}...`);
+            const feed = await parser.parseURL(source.url);
+            // Grab the top 7 articles from THIS specific source
+            const topArticles = feed.items.slice(0, 7); 
+            // Combine them into our master array
+            allTopArticles = allTopArticles.concat(topArticles);
+        } catch (err) {
+            console.error(`   ⚠️ Failed to fetch from ${source.name}:`, err.message);
+        }
+    }
+
+    console.log(`\n📊 Gathered a total of ${allTopArticles.length} articles. Passing to the Gatekeeper...`);
 
     // Array to hold only the articles that pass the gate
     const newArticlesToProcess = [];
 
     // DEFENSE 1 - THE DEDUPLICATION GATE
     // We loop through each article and check the database BEFORE spending AI tokens
-    for (const article of topArticles) {
+    for (const article of allTopArticles) {
 
-        // For each article, we send a POST request to our Express server's /api/posts/check route to see if the URL already exists in the database.
+        // For each article, we send a POST request to our Express server's /api/posts/check route
         try {
             const checkRes = await fetch(CHECK_URL, {
                 method: 'POST',
@@ -104,7 +125,8 @@ async function runIngestionPipeline() {
                 // If the article is NOT in the DB, add it to our batch
                 newArticlesToProcess.push({ 
                     title: article.title, 
-                    summary: article.contentSnippet, 
+                    // CHANGE ADDED: ESPN fallback for contentSnippet
+                    summary: article.contentSnippet || article.content, 
                     url: article.link 
                 });
             }
@@ -115,12 +137,12 @@ async function runIngestionPipeline() {
 
     // If the array is empty, exit early and save tokens!
     if (newArticlesToProcess.length === 0) {
-        console.log(`🛡️ Gate closed: All articles already in database. Zero AI tokens consumed.`);
+        console.log(`🛡️ Gate closed: All ${allTopArticles.length} articles already in database. Zero AI tokens consumed.`);
         return; 
     }
 
-    console.log(`\n🧠 Sending batch of ${newArticlesToProcess.length} new articles to AI...`);
-    
+    console.log(`\n🧠 Sending optimized batch of ${newArticlesToProcess.length} new articles to AI...`);
+
     // Pass data to Gemini (Now passing the filtered batch array)
     const aiFormattedPosts = await batchFormatWithGemini(newArticlesToProcess);
     
