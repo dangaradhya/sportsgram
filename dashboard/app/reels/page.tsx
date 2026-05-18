@@ -7,7 +7,7 @@
 "use client";
 
 // 1. IMPORTS
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 
 export default function Reels() {
@@ -22,6 +22,8 @@ export default function Reels() {
   // State to track which video is on screen and if it is paused
   const [activeReelId, setActiveReelId] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
+  // Tracks the last video we restarted so we don't restart it again on unpause
+  const lastPlayedIdRef = useRef<number | null>(null);
   
   // 3. DATA FETCHING FUNCTION
   // This function fetches reels from the backend API based on the current page number.
@@ -133,14 +135,22 @@ export default function Reels() {
     // This ensures that only the video currently in view plays, while all others are paused, creating a 
     // seamless viewing experience as the user scrolls through the reels.
     reels.forEach((reel) => {
-      const iframe = document.getElementById(`Youtubeer-${reel.id}`) as HTMLIFrameElement;
+      const iframe = document.getElementById(`reel-player-${reel.id}`) as HTMLIFrameElement;
       
       if (iframe && iframe.contentWindow) {
         if (reel.id === activeReelId && isPlaying) {
-          // Send SEEK TO 0 command first, then send PLAY command
-          // send seekTo(0) to reset the video to the beginning every time it comes into view, ensuring a consistent viewing experience.
-          iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [0, true] }), '*');
+          
+          // Check if this is a NEW video snapping into view
+          if (lastPlayedIdRef.current !== activeReelId) {
+             // If it's new, reset it to the beginning
+             iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [0, true] }), '*');
+             // Update our memory to remember we just restarted this one
+             lastPlayedIdRef.current = activeReelId;
+          }
+          
+          // Always send the play command when isPlaying is true
           iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*');
+          
         } else {
           // Send PAUSE command to ALL OTHER videos, or if the user manually paused
           iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo' }), '*');
@@ -179,21 +189,27 @@ export default function Reels() {
               data-id={reel.id} // Used by the Intersection Observer
               className="reel-container h-screen w-full flex flex-col items-center justify-center snap-center relative"
             >
-              {/* Video Container */}
-              <div className="w-full max-w-md h-[75vh] bg-gray-900 rounded-xl overflow-hidden shadow-2xl relative border border-gray-800">
+              {/* The Video Container 
+                  We make sure it has 'overflow-hidden' and 'bg-black' to act as a frame.
+              */}
+              <div className="w-full max-w-md h-[75vh] bg-black rounded-xl overflow-hidden shadow-2xl relative border border-gray-800">
                 
-                {/* YouTube iFrame Embed
-                  We added 'enablejsapi=1' so we can control it via postMessage.
-                  We added 'controls=0' to hide the YouTube progress bar and make it look like a native app.
+                {/* THE SCALE TRICK WRAPPER
+                    This div is 135% the size of the container. We translate it perfectly to the center.
+                    This pushes all of YouTube's branding (top and bottom) outside the visible frame!
                 */}
-                <iframe
-                  id={`Youtubeer-${reel.id}`}
-                  className="w-full h-full pointer-events-none" // pointer-events-none prevents YouTube from stealing our clicks!
-                  src={`https://www.youtube.com/embed/${reel.video_id}?enablejsapi=1&autoplay=0&controls=0&rel=0&modestbranding=1&loop=1&playlist=${reel.video_id}`}
-                  title={reel.title}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                ></iframe>
+                <div className="absolute top-1/2 left-1/2 w-[135%] h-[135%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                  {/* YouTube iFrame Embed */}
+                  <iframe
+                    id={`reel-player-${reel.id}`}
+                    className="w-full h-full"
+                    // Added playsinline=1, iv_load_policy=3, and disablekb=1 for maximum stealth
+                    src={`https://www.youtube.com/embed/${reel.video_id}?enablejsapi=1&autoplay=0&controls=0&rel=0&modestbranding=1&loop=1&playlist=${reel.video_id}&playsinline=1&iv_load_policy=3&disablekb=1`}
+                    title={reel.title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  ></iframe>
+                </div>
 
                 {/* The Transparent Overlay (The Click Catcher) */}
                 <div 
@@ -207,8 +223,9 @@ export default function Reels() {
                 >
                   {/* Big Play Button Icon that shows up when paused */}
                   {!isPlaying && activeReelId === reel.id && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-white opacity-80" viewBox="0 0 20 20" fill="currentColor">
+                    // Added bg-black/60 and backdrop-blur-md to completely hide YouTube's center button
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-md transition-all duration-300">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 text-white opacity-90 drop-shadow-2xl" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                       </svg>
                     </div>
@@ -216,9 +233,9 @@ export default function Reels() {
                 </div>
 
                 {/* Video Metadata Overlay */}
-                <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none">
+                <div className="absolute bottom-0 left-0 w-full p-6 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none z-20">
                   <h3 className="text-lg font-bold text-white leading-snug drop-shadow-lg">{reel.title}</h3>
-                  <p className="text-sm text-gray-300 mt-1 font-medium bg-black/40 inline-block px-2 py-0.5 rounded">@{reel.channel_name}</p>
+                  <p className="text-sm text-gray-300 mt-2 font-medium bg-white/10 backdrop-blur-sm inline-block px-3 py-1 rounded-full shadow-sm">@{reel.channel_name}</p>
                 </div>
               </div>
             </div>
