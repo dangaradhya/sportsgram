@@ -50,6 +50,11 @@ export default function Home() {
   // Refactored Fetch Logic to accept a page number
   const fetchPosts = async (pageNum: number) => {
     try {
+      // Artificial half-second delay for infinite scroll feel
+      if (pageNum > 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
       // We now pass the page parameter to our Express API
       const res = await fetch(`http://localhost:3000/api/posts?page=${pageNum}&limit=5`);
       const data = await res.json();
@@ -84,6 +89,31 @@ export default function Home() {
   useEffect(() => {
     fetchPosts(page);
   }, [page]);
+
+  // The Infinite Scroll Observer for the Posts Feed
+  useEffect(() => {
+    if (!hasMore || loadingMore) return;
+
+    // We create a new IntersectionObserver that watches the "sentinel" div at the bottom 
+    // of the feed. When that div comes into view (meaning the user has scrolled to the bottom), 
+    // we set 'loadingMore' to true and increment the 'page' state, which triggers a new fetch.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setLoadingMore(true);
+          setPage((prev) => prev + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    // We start observing the sentinel element. If it exists, we attach the observer to it.
+    // The observer will automatically trigger the callback when the sentinel comes into view.
+    const sentinel = document.getElementById('posts-scroll-sentinel');
+    if (sentinel) observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, posts]);
 
   // Authentication Phase - Handle form submission for Login/Register
   const handleAuthSubmit = async (e: SyntheticEvent) => {
@@ -437,24 +467,17 @@ export default function Home() {
               ))}
             </div>
 
-            {/* The Load More Button UI */}
+            {/* Infinite Scroll Sentinel replacing the Load More button */}
             {hasMore && (
-              <div className="mt-10 flex justify-center">
-                <button
-                  onClick={() => {
-                    setLoadingMore(true);
-                    setPage(prevPage => prevPage + 1);
-                  }}
-                  disabled={loadingMore}
-                  className="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold rounded-full border border-gray-700 transition-all disabled:opacity-50"
-                >
-                  {loadingMore ? 'Loading...' : 'Load More News'}
-                </button>
+              <div id="posts-scroll-sentinel" className="mt-10 flex justify-center h-16 items-center">
+                {loadingMore && (
+                  <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                )}
               </div>
             )}
             
             {!hasMore && posts.length > 0 && (
-              <p className="text-center text-gray-500 mt-10 text-sm font-medium">You have reached the end of the feed.</p>
+              <p className="text-center text-gray-500 mt-10 mb-10 text-sm font-medium">You have reached the end of the feed.</p>
             )}
           </>
         )}

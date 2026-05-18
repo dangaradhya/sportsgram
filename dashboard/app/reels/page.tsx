@@ -27,6 +27,11 @@ export default function Reels() {
   // This function fetches reels from the backend API based on the current page number.
   const fetchReels = async (pageNum: number) => {
     try {
+      // Artificial half-second delay for infinite scroll feel
+      if (pageNum > 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
       // Fetch 3 reels at a time (iframes are heavy on memory!)
       const res = await fetch(`http://localhost:3000/api/reels?page=${pageNum}&limit=3`);
       const data = await res.json();
@@ -92,6 +97,32 @@ export default function Reels() {
     return () => observer.disconnect();
   }, [reels]);
 
+  // The Infinite Scroll Observer
+  useEffect(() => {
+    if (!hasMore || loadingMore) return;
+    
+    // We create a new Intersection Observer that watches a sentinel element at 
+    // the bottom of the list. When this sentinel comes into view, it means the 
+    // user has scrolled to the bottom, and we can load more reels by incrementing
+    // the page number. 
+    const scrollObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setLoadingMore(true);
+          setPage((prev) => prev + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    // We observe the sentinel element, which is a div at the bottom of the reels list. 
+    // When this element comes into view, it triggers the observer callback to load more reels.
+    const sentinel = document.getElementById('reels-scroll-sentinel');
+    if (sentinel) scrollObserver.observe(sentinel);
+
+    return () => scrollObserver.disconnect();
+  }, [hasMore, loadingMore, reels]);
+
   // The YouTube API Controller
   // Whenever the active reel or the play state changes, we send a message to the iframes.
   useEffect(() => {
@@ -106,7 +137,9 @@ export default function Reels() {
       
       if (iframe && iframe.contentWindow) {
         if (reel.id === activeReelId && isPlaying) {
-          // Send PLAY command to the active video
+          // Send SEEK TO 0 command first, then send PLAY command
+          // send seekTo(0) to reset the video to the beginning every time it comes into view, ensuring a consistent viewing experience.
+          iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [0, true] }), '*');
           iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*');
         } else {
           // Send PAUSE command to ALL OTHER videos, or if the user manually paused
@@ -120,8 +153,8 @@ export default function Reels() {
     <main className="bg-black text-white h-screen overflow-hidden flex flex-col">
       
       {/* Top Navigation Bar */}
-      <div className="absolute top-0 w-full z-50 p-6 flex justify-center space-x-8 bg-gradient-to-b from-black/80 to-transparent">
-        <Link href="/" className="text-gray-400 font-bold text-lg hover:text-white transition-colors drop-shadow-md">
+      <div className="absolute top-0 w-full z-50 p-6 flex justify-center space-x-8 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+        <Link href="/" className="text-gray-400 font-bold text-lg hover:text-white transition-colors drop-shadow-md pointer-events-auto">
           Posts
         </Link>
         <span className="text-white font-bold text-lg border-b-2 border-white pb-1 drop-shadow-md">
@@ -191,19 +224,12 @@ export default function Reels() {
             </div>
           ))}
 
-          {/* Load More Trigger Area */}
+          {/* Infinite Scroll Sentinel replacing the Load More button */}
           {hasMore && (
-            <div className="h-[20vh] w-full flex items-center justify-center snap-center">
-              <button
-                onClick={() => {
-                  setLoadingMore(true);
-                  setPage(p => p + 1);
-                }}
-                disabled={loadingMore}
-                className="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold rounded-full border border-gray-700 transition-all disabled:opacity-50"
-              >
-                {loadingMore ? 'Loading...' : 'Swipe down to load more 👇'}
-              </button>
+            <div id="reels-scroll-sentinel" className="h-[20vh] w-full flex items-center justify-center snap-center">
+              {loadingMore && (
+                <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+              )}
             </div>
           )}
           {!hasMore && (
