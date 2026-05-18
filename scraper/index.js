@@ -23,7 +23,7 @@ const REELS_SOURCES = [
 ];
 
 // This is the URL of the Express API endpoint where we will POST the formatted articles to be saved in the database
-const SPORTSGRAM_API_URL = 'http://localhost:3000/api/posts'; 
+const GLIDE_API_URL = 'http://localhost:3000/api/posts'; 
 // The URL of our new Deduplication Gate route on the Express Server
 const CHECK_URL = 'http://localhost:3000/api/posts/check';
 
@@ -194,7 +194,7 @@ async function runIngestionPipeline() {
             // Send the AI's output to our Express Server via an HTTP POST request
             // This is the built-in Node.js fetch API 
             try {
-                const dbResponse = await fetch(SPORTSGRAM_API_URL, {
+                const dbResponse = await fetch(GLIDE_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     // We now stringify the new 'payload' object instead of just 'post'
@@ -202,7 +202,7 @@ async function runIngestionPipeline() {
                 });
 
                 if (dbResponse.ok) {
-                    console.log(`💾 Successfully saved to Sportsgram Database: ${post.headline}`);
+                    console.log(`💾 Successfully saved to GLIDE Database: ${post.headline}`);
                 } else {
                     console.error(`❌ Failed to save to database. Is the server running?`);
                 }

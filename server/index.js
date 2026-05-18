@@ -11,7 +11,7 @@ const jwt = require('jsonwebtoken');
 const app = express();
 const PORT = 3000; // The port our server will listen on
 // In production, this lives in a .env file. We hardcode it here for development.
-const JWT_SECRET = 'sportsgram_super_secret_key_2026';
+const JWT_SECRET = 'glide_super_secret_key_2026';
 
 // 3. MIDDLEWARE
 // Middleware are functions that intercept incoming HTTP requests before they hit your routes.
@@ -23,8 +23,8 @@ app.use(express.json());
 
 // 4. DATABASE CONNECTION
 // We are creating a connection pool to a local SQLite file. 
-// If 'sportsgram.sqlite' doesn't exist, SQLite will create it automatically.
-const db = new sqlite3.Database('./sportsgram.sqlite', (err) => {
+// If 'glide.sqlite' doesn't exist, SQLite will create it automatically.
+const db = new sqlite3.Database('./glide.sqlite', (err) => {
     if (err) {
         console.error('Error opening database:', err.message);
     } else {
@@ -150,7 +150,7 @@ app.post('/api/login', async (req, res) => {
 // 'req' is the incoming request, 'res' is the outgoing response.
 app.get('/api/health', (req, res) => {
     // We send back a standard HTTP 200 OK status with a JSON payload.
-    res.status(200).json({ status: 'Online', message: 'Sportsgram API is running' });
+    res.status(200).json({ status: 'Online', message: 'Glide API is running' });
 });
 
 // THE DEDUPLICATION CHECKER ROUTE (The Gatekeeper)
@@ -189,12 +189,12 @@ app.post('/api/posts', (req, res) => {
             console.error("Error inserting data:", err.message);
             return res.status(500).json({ error: 'Failed to save post to database' });
         }
-        res.status(201).json({ message: 'Sportsgram post created successfully!', postId: this.lastID });
+        res.status(201).json({ message: 'Glide post created successfully!', postId: this.lastID });
     });
 });
 
 // 9. READING DATA (The GET Route - 'read operation')
-// Big Picture: When a user opens Sportsgram on their phone or laptop, the UI is completely empty. 
+// Big Picture: When a user opens Glide on their phone or laptop, the UI is completely empty. 
 // The frontend immediately fires off a GET request to your server asking for the latest data to display.
 // Upgraded with Phase 2 Pagination and Sorting by Timestamp (Newest First)
 app.get('/api/posts', (req, res) => {

@@ -40,7 +40,7 @@ export default function Home() {
 
   // Authentication Phase - Check for existing session on load
   useEffect(() => {
-    const storedSession = localStorage.getItem('sportsgram_session');
+    const storedSession = localStorage.getItem('glide_session');
     if (storedSession) {
       setUser(JSON.parse(storedSession));
     }
@@ -150,7 +150,7 @@ export default function Home() {
         // and close the modal to show the main app interface.
         const sessionData = { username: data.username, token: data.token };
         setUser(sessionData);
-        localStorage.setItem('sportsgram_session', JSON.stringify(sessionData));
+        localStorage.setItem('glide_session', JSON.stringify(sessionData));
         setShowAuthModal(false);
         setAuthForm({ username: '', password: '' });
       }
@@ -164,7 +164,7 @@ export default function Home() {
   // Authentication Phase - Handle Logout
   const handleLogout = () => {
     setUser(null);
-    localStorage.removeItem('sportsgram_session');
+    localStorage.removeItem('glide_session');
   };
 
   // 4. THE LIKE FUNCTION
@@ -192,7 +192,7 @@ export default function Home() {
       // Native Mobile Share
       try {
         await navigator.share({
-          title: 'Sportsgram',
+          title: 'Glide',
           text: `Check out this news: ${headline}`,
           url: url,
         });
@@ -238,7 +238,7 @@ export default function Home() {
             </button>
             
             <h2 className="text-2xl font-bold mb-6 text-center">
-              {authMode === 'login' ? 'Welcome Back' : 'Join Sportsgram'}
+              {authMode === 'login' ? 'Welcome Back' : 'Join Glide'}
             </h2>
 
             <form onSubmit={handleAuthSubmit} className="space-y-4">
@@ -303,7 +303,7 @@ export default function Home() {
         {/* Authentication Phase - Updated Header Layout with User Profile */}
         <div className="flex items-center justify-between mb-4"> 
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
-            Sportsgram
+            Glide
           </h1>
           
           <div>

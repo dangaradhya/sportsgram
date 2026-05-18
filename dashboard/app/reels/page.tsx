@@ -142,7 +142,8 @@ export default function Reels() {
           
           // Check if this is a NEW video snapping into view
           if (lastPlayedIdRef.current !== activeReelId) {
-             // If it's new, reset it to the beginning
+             // If it's new, reset it to the beginning by sending seekTo(0) to reset the video every time it comes into view, 
+             // ensuring a consistent viewing experience.
              iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [0, true] }), '*');
              // Update our memory to remember we just restarted this one
              lastPlayedIdRef.current = activeReelId;
@@ -194,15 +195,19 @@ export default function Reels() {
               */}
               <div className="w-full max-w-md h-[75vh] bg-black rounded-xl overflow-hidden shadow-2xl relative border border-gray-800">
                 
-                {/* THE SCALE TRICK WRAPPER
-                    This div is 135% the size of the container. We translate it perfectly to the center.
-                    This pushes all of YouTube's branding (top and bottom) outside the visible frame!
+                {/* The Scale Trick Wrapper
+                    Div reduced from 135% to 125%. We translate it perfectly to the center.
+                    This pushes almost all the branding outside the frame while keeping the video fully visible and filling the container, 
+                    // creating a more native and immersive feel.
                 */}
-                <div className="absolute top-1/2 left-1/2 w-[135%] h-[135%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-                  {/* YouTube iFrame Embed */}
+                <div className="absolute top-1/2 left-1/2 w-[125%] h-[125%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                  {/* YouTube iFrame Embed
+                      We added 'enablejsapi=1' so we can control it via postMessage.
+                      We added 'controls=0' to hide the YouTube progress bar and make it look like a native app.
+                  */}
                   <iframe
                     id={`reel-player-${reel.id}`}
-                    className="w-full h-full"
+                    className="w-full h-full pointer-events-none" // pointer-events-none prevents YouTube from stealing our clicks!
                     // Added playsinline=1, iv_load_policy=3, and disablekb=1 for maximum stealth
                     src={`https://www.youtube.com/embed/${reel.video_id}?enablejsapi=1&autoplay=0&controls=0&rel=0&modestbranding=1&loop=1&playlist=${reel.video_id}&playsinline=1&iv_load_policy=3&disablekb=1`}
                     title={reel.title}
@@ -211,9 +216,12 @@ export default function Reels() {
                   ></iframe>
                 </div>
 
-                {/* The Transparent Overlay (The Click Catcher) */}
+                {/* The Transparent Overlay (The Click Catcher) 
+                    Made aggressive blur and high Z-index.
+                    Clicks are intercepted here, and on pause, we aggressively blur the misleading elements behind it.
+                */}
                 <div 
-                  className="absolute inset-0 z-10 cursor-pointer"
+                  className="absolute inset-0 z-20 cursor-pointer"
                   onClick={() => {
                     // Only allow pausing/playing if this is the active video
                     if (activeReelId === reel.id) {
@@ -223,8 +231,8 @@ export default function Reels() {
                 >
                   {/* Big Play Button Icon that shows up when paused */}
                   {!isPlaying && activeReelId === reel.id && (
-                    // Added bg-black/60 and backdrop-blur-md to completely hide YouTube's center button
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-md transition-all duration-300">
+                    // We apply a heavy backdrop-blur and z-index to completely obscure YouTube's misleading elements while standardizing the experience with our own standard icon.
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-lg transition-all duration-300">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 text-white opacity-90 drop-shadow-2xl" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                       </svg>
@@ -232,8 +240,10 @@ export default function Reels() {
                   )}
                 </div>
 
-                {/* Video Metadata Overlay */}
-                <div className="absolute bottom-0 left-0 w-full p-6 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none z-20">
+                {/* Video Metadata Overlay 
+                    Correct z-index to cover bottom floating bars for standard data.
+                */}
+                <div className="absolute bottom-0 left-0 w-full p-6 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none z-30">
                   <h3 className="text-lg font-bold text-white leading-snug drop-shadow-lg">{reel.title}</h3>
                   <p className="text-sm text-gray-300 mt-2 font-medium bg-white/10 backdrop-blur-sm inline-block px-3 py-1 rounded-full shadow-sm">@{reel.channel_name}</p>
                 </div>
