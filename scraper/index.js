@@ -268,7 +268,22 @@ async function runReelsPipeline() {
 
                 if (!videoId) continue;
 
-                // Validate that this is actually a vertical Short!
+                // DEFENSE: Check if video is already in database, which prevents us from saving duplicates
+                const checkRes = await fetch(REELS_CHECK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ video_id: videoId })
+                });
+                
+                // We await the response and parse the JSON to see if the video already exists in our database
+                const { exists } = await checkRes.json();
+
+                // If it exists, skip the rest of the loop entirely!
+                if (exists) {
+                    continue; 
+                }
+
+                //  New video - validate that this is actually a vertical short
                 const isShort = await isYouTubeShort(videoId);
                 if (!isShort) {
                     // We skip it and move to the next iteration of the loop
@@ -276,36 +291,24 @@ async function runReelsPipeline() {
                 }
 
                 await new Promise(resolve => setTimeout(resolve, 500));
-
-                // DEFENSE: Check if video is already in database, which prevents us from saving duplicates
-                const checkRes = await fetch(REELS_CHECK_URL, {
+                
+                // Save directly to the database by POSTing to our Express server's /api/reels endpoint
+                const payload = {
+                    video_id: videoId,
+                    title: title,
+                    channel_name: source.name
+                };
+                
+                const dbResponse = await fetch(REELS_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ video_id: videoId })
+                    body: JSON.stringify(payload)
                 });
-
-                // The Express server will respond with { exists: true/false }
-                const { exists } = await checkRes.json();
                 
-                if (!exists) {
-                    // Send directly to the database 
-                    const payload = {
-                        video_id: videoId,
-                        title: title,
-                        channel_name: source.name
-                    };
-                    
-                    // We send a POST request to our Express server's /api/reels endpoint to save the new reel
-                    const dbResponse = await fetch(REELS_API_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    
-                    if (dbResponse.ok) {
-                        newReelsSaved++;
-                        console.log(`   💾 Saved New Reel: ${title}`);
-                    }
+                // If the response is OK, we increment our newReelsSaved counter and log the success. If not, we log an error.
+                if (dbResponse.ok) {
+                    newReelsSaved++;
+                    console.log(`   💾 Saved New Reel: ${title}`);
                 }
             }
         } catch (err) {
