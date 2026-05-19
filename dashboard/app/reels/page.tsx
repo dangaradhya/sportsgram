@@ -3,7 +3,7 @@
 // This is the main page for the Reels section of the dashboard. 
 // It fetches and displays YouTube Shorts in a vertical scrollable format with 
 // snap scrolling. The page includes a top navigation bar to switch between Posts 
-// and Reels, and it handles loading states and pagination for fetching more reels.
+// and Reels, and it handles loading states and fetching more randomized reels.
 "use client";
 
 // 1. IMPORTS
@@ -12,10 +12,10 @@ import Link from 'next/link';
 
 export default function Reels() {
   // 2. STATE MANAGEMENT
-  // We maintain state for the list of reels, loading status, current page for pagination,
+  // We maintain state for the list of reels, loading status, 
+  // whether there are more reels to load, and whether we are currently loading more reels.
   const [reels, setReels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -26,16 +26,18 @@ export default function Reels() {
   const lastPlayedIdRef = useRef<number | null>(null);
   
   // 3. DATA FETCHING FUNCTION
-  // This function fetches reels from the backend API based on the current page number.
-  const fetchReels = async (pageNum: number) => {
+  const fetchReels = async () => {
     try {
       // Artificial half-second delay for infinite scroll feel
-      if (pageNum > 1) {
+      if (reels.length > 0) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // Fetch 3 reels at a time (iframes are heavy on memory!)
-      const res = await fetch(`http://localhost:3000/api/reels?page=${pageNum}&limit=3`);
+      // Generate a string of all the video IDs currently sitting in React state
+      const currentIds = reels.map(r => r.id).join(',');
+
+      // Request 3 random reels, strictly excluding the ones we already have!
+      const res = await fetch(`http://localhost:3000/api/reels?limit=3&exclude=${currentIds}`);
       const data = await res.json();
       
       // If no more reels are returned, we set hasMore to false to stop further loading.
@@ -63,10 +65,12 @@ export default function Reels() {
     }
   };
   
-  // This runs on component mount and whenever the page number changes, triggering a new fetch for reels.
+  // This runs on component mount, triggering a new fetch for reels.
   useEffect(() => {
-    fetchReels(page);
-  }, [page]);
+    fetchReels();
+    // We intentionally leave out dependencies here because we only want to fetch once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // The Intersection Observer (The Tracker)
   // This watches the screen. When a video container takes up at least 60% of the screen,
@@ -105,13 +109,12 @@ export default function Reels() {
     
     // We create a new Intersection Observer that watches a sentinel element at 
     // the bottom of the list. When this sentinel comes into view, it means the 
-    // user has scrolled to the bottom, and we can load more reels by incrementing
-    // the page number. 
+    // user has scrolled to the bottom, and we can load more reels.
     const scrollObserver = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
           setLoadingMore(true);
-          setPage((prev) => prev + 1);
+          fetchReels();
         }
       },
       { threshold: 0.1 }
@@ -123,6 +126,8 @@ export default function Reels() {
     if (sentinel) scrollObserver.observe(sentinel);
 
     return () => scrollObserver.disconnect();
+  // Include reels in dependency array so the observer always has the latest list of IDs
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMore, loadingMore, reels]);
 
   // The YouTube API Controller
@@ -173,7 +178,8 @@ export default function Reels() {
         </span>
       </div>
 
-      {loading && page === 1 ? (
+      {/* Loading check updated from 'page === 1' to 'reels.length === 0' */}
+      {loading && reels.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <p className="text-gray-400 animate-pulse font-medium">Tuning into the broadcast...</p>
         </div>

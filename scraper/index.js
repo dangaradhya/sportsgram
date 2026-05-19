@@ -10,16 +10,27 @@ const parser = new Parser();
 // Initialize the Gemini Client
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// YouTube API key for the Reels pipeline, also stored securely in .env
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+
 // News sources for the main pipeline (e.g., Sky Sports, ESPN)
 const NEWS_SOURCES = [
     { name: 'SkySports', url: 'https://www.skysports.com/rss/12040' },
     { name: 'ESPN', url: 'https://www.espn.com/espn/rss/news' }
 ];
 
-// YouTube channels routed through public RSS-Bridge instances to bypass the 15-video limit
+// Targeting the uploads playlist of 10 Youtube channels
 const REELS_SOURCES = [
-    { name: 'CBS Sports Golazo', url: 'https://rss-bridge.org/bridge01/?action=display&bridge=Youtube&context=By+channel+id&c=UCET00YnetHT7tOpu12v8jxg&format=Mrss' },
-    { name: 'ESPN', url: 'https://rss-bridge.org/bridge01/?action=display&bridge=Youtube&context=By+channel+id&c=UCiWLfSweyRNmLpgEHekhoAg&format=Mrss' }
+    { name: 'ESPN', playlistId: 'UUiWLfSweyRNmLpgEHekhoAg' },
+    { name: 'CBS Sports Golazo', playlistId: 'UUET00YnetHT7tOpu12v8jxg' },
+    { name: 'UFC', playlistId: 'UUvgfXK4nTYKudb0rFR6noLA' },
+    { name: 'NBA', playlistId: 'UUWJ2lWNubArHWmf3FIHbfcQ' },
+    { name: 'Sky Sports Premier League', playlistId: 'UUNAf1k0yIjyGu3k9BwAg3lg' },
+    { name: 'The Ring Magazine', playlistId: 'UU8ybHJltwhtpk0cFKU4G8kQ' },
+    { name: 'Bundesliga', playlistId: 'UU6UL29enLNe4mqwTfAyeNuw' },
+    { name: 'Serie A', playlistId: 'UUBJeMCIeLQos7wacox4hmLQ' },
+    { name: 'TSN', playlistId: 'UU--i2rV5NCxiEIPefr3l-zQ' },
+    { name: 'House of Highlights', playlistId: 'UUqQo7ewe87aYAe7ub5UqXMw' }
 ];
 
 // This is the URL of the Express API endpoint where we will POST the formatted articles to be saved in the database
@@ -231,19 +242,29 @@ async function runReelsPipeline() {
         try {
             console.log(`   -> Fetching videos from ${source.name}...`);
 
-            // We use the same RSS parser to read the YouTube channel's video feed, 
-            // which gives us structured data about the latest videos.
-            const feed = await parser.parseURL(source.url);
+            // The official YouTube API endpoint requesting 10 videos from the Uploads playlist
+            const apiUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${source.playlistId}&maxResults=10&key=${YOUTUBE_API_KEY}`;
             
-            // RSS-Bridge bypasses the 15-item limit, so we can safely pull 50 videos
-            const topVideos = feed.items.slice(0, 50); 
+            // Fetch the data from YouTube's API
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+
+            // Error handling in case the API key is missing or quota is exceeded
+            if (data.error) {
+                console.error(`   ⚠️ API Error for ${source.name}:`, data.error.message);
+                continue;
+            }
+            
+            // We extract the list of videos from the API response
+            const topVideos = data.items;
+            if (!topVideos) continue;
+
             totalReelsGathered += topVideos.length;
 
             for (const video of topVideos) {
-                // YouTube RSS links look like: https://www.youtube.com/watch?v=dQw4w9WgXcQ
-                // We need to extract just the ID at the end using URLSearchParams
-                const videoUrl = new URL(video.link);
-                const videoId = videoUrl.searchParams.get('v');
+                // The JSON structure from YouTube's API is slightly different from RSS
+                const videoId = video.snippet.resourceId.videoId;
+                const title = video.snippet.title;
 
                 if (!videoId) continue;
 
@@ -253,6 +274,8 @@ async function runReelsPipeline() {
                     // We skip it and move to the next iteration of the loop
                     continue; 
                 }
+
+                await new Promise(resolve => setTimeout(resolve, 500));
 
                 // DEFENSE: Check if video is already in database, which prevents us from saving duplicates
                 const checkRes = await fetch(REELS_CHECK_URL, {
@@ -268,7 +291,7 @@ async function runReelsPipeline() {
                     // Send directly to the database 
                     const payload = {
                         video_id: videoId,
-                        title: video.title,
+                        title: title,
                         channel_name: source.name
                     };
                     
@@ -281,7 +304,7 @@ async function runReelsPipeline() {
                     
                     if (dbResponse.ok) {
                         newReelsSaved++;
-                        console.log(`   💾 Saved New Reel: ${video.title}`);
+                        console.log(`   💾 Saved New Reel: ${title}`);
                     }
                 }
             }

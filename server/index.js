@@ -274,16 +274,43 @@ app.post('/api/reels', (req, res) => {
 
 // This GET route retrieves reels with pagination, similar to the posts route, essentially
 // fetching reels for the Next.js frontend to display in the reels section.
+// Replaced the 'page/offset' chronological logic with a dynamic 'exclude' list and 'ORDER BY RANDOM()'.
 app.get('/api/reels', (req, res) => {
-    const page = parseInt(req.query.page) || 1;
-    // We limit this to 3 per page because embedded iframes are memory heavy!
-    const limit = parseInt(req.query.limit) || 3; 
-    const offset = (page - 1) * limit;
+    // We still allow a 'limit' query parameter to control how many reels we return at once (default 3).
+    const limit = parseInt(req.query.limit) || 3;
+    const exclude = req.query.exclude || ''; // Capture the list of IDs from the frontend
     
-    const sql = `SELECT * FROM reels ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
-    db.all(sql, [limit, offset], (err, rows) => {
-        if (err) return res.status(500).json({ error: 'Failed to retrieve reels' });
-        res.status(200).json(rows);
+    // Default SQL: Random selection
+    // We start with a simple query that selects random reels up to the specified limit.
+    // This gives us a fresh mix of reels each time, rather than just the newest ones.
+    let sql = `SELECT * FROM reels ORDER BY RANDOM() LIMIT ?`;
+    let params = [limit];
+
+    // If the frontend sends IDs to exclude, we inject the NOT IN clause
+    // This allows us to avoid showing the same reels repeatedly as the user loads more.
+    if (exclude) {
+        // Convert the string "1,4,7" into an array of integers [1, 4, 7]
+        // We also filter out any non-numeric values just in case the frontend sends something unexpected.
+        // The 'exclude' query parameter is expected to be a comma-separated string of reel IDs that the frontend has already displayed.
+        const excludeIds = exclude.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+        
+        // If there are valid IDs to exclude, we modify the SQL query to add a NOT IN clause.
+        if (excludeIds.length > 0) {
+            // Generate the exact number of ? placeholders needed (e.g. ?, ?, ?)
+            // This is important for parameterized queries to prevent SQL injection. We can't just inject the IDs directly into the SQL string.
+            // For example, if excludeIds has 3 IDs, we need "?, ?, ?" in the SQL to safely substitute those values.
+            const placeholders = excludeIds.map(() => '?').join(',');
+            sql = `SELECT * FROM reels WHERE id NOT IN (${placeholders}) ORDER BY RANDOM() LIMIT ?`;
+
+            // The parameters for the query will be the list of IDs to exclude followed by the limit.
+            params = [...excludeIds, limit];
+        }
+    }
+
+    // Finally, we execute the query with the constructed SQL and parameters. The database engine will safely substitute the parameters into the query.
+    db.all(sql, params, (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
     });
 });
 
