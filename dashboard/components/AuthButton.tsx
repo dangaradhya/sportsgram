@@ -59,7 +59,12 @@ export default function AuthButton() {
     return (
       <div className="flex items-center space-x-3 bg-white/10 rounded-full pr-4 p-1 backdrop-blur-md border border-white/20 shadow-lg">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={user.picture} alt="Profile" className="w-8 h-8 rounded-full border border-white/50" />
+        <img 
+          src={user.picture} 
+          alt="Profile" 
+          className="w-8 h-8 rounded-full border border-white/50" 
+          referrerPolicy="no-referrer" 
+        />
         <span className="text-sm font-medium text-white">{user.name.split(' ')[0]}</span>
         <button 
           onClick={handleLogout}
