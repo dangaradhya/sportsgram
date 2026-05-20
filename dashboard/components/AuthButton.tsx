@@ -32,12 +32,15 @@ export default function AuthButton() {
       // Parse the response from the backend, which should include the Glide JWT and user data
       const data = await res.json();
 
-      // If the login is successful, store the Glide JWT and user data securely in localStorage and update the state to display user info
+      // If the login is successful, store the Glide JWT and user data securely in localStorage
       if (res.ok) {
-        // Save the Glide JWT and User data securely in localStorage
+        // Store the Glide JWT and user data in localStorage for session persistence across page reloads
         localStorage.setItem('glide_token', data.token);
         localStorage.setItem('glide_user', JSON.stringify(data.user));
         setUser(data.user);
+        
+        // Force a hard reload to pull the user's personalized feed and likes
+        window.location.reload();
       } else {
         console.error("Login failed:", data.error);
       }
@@ -46,24 +49,27 @@ export default function AuthButton() {
     }
   };
 
-  // Handles user logout by clearing the Google session and removing stored tokens and user data from localStorage, then resetting the user state
+  // Handles user logout by clearing the Google session and removing stored tokens
   const handleLogout = () => {
     googleLogout();
     localStorage.removeItem('glide_token');
     localStorage.removeItem('glide_user');
     setUser(null);
+    
+    // Force a hard reload to instantly wipe all personalized UI state 
+    window.location.reload();
   };
   
-  // If a user is logged in, display their profile picture, name, and a logout button. Otherwise, show the Google Login button.
+  // If a user is logged in, display their profile picture, name, and a logout button.
   if (user) {
     return (
       <div className="flex items-center space-x-3 bg-white/10 rounded-full pr-4 p-1 backdrop-blur-md border border-white/20 shadow-lg">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img 
-          src={user.picture} 
-          alt="Profile" 
-          className="w-8 h-8 rounded-full border border-white/50" 
-          referrerPolicy="no-referrer" 
+            src={user.picture} 
+            alt="Profile" 
+            className="w-8 h-8 rounded-full border border-white/50" 
+            referrerPolicy="no-referrer"
         />
         <span className="text-sm font-medium text-white">{user.name.split(' ')[0]}</span>
         <button 
@@ -76,7 +82,7 @@ export default function AuthButton() {
     );
   }
 
-  // If no user is logged in, render the Google Login button with custom styling and handle the login success and error cases.
+  // If no user is logged in, render the Google Login button
   return (
     <div className="shadow-xl rounded-md overflow-hidden">
         <GoogleLogin
