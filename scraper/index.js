@@ -1,5 +1,5 @@
 // 1. IMPORTS & CONFIGURATION
-require('dotenv').config(); // Loads your GEMINI_API_KEY from the .env file
+require('dotenv').config(); // Loads your GEMINI_API_KEY and YOUTUBE_API KEY from the .env file
 const cheerio = require('cheerio');
 const Parser = require('rss-parser');
 // Import node-cron for Strategic Pacing (Token Defense)

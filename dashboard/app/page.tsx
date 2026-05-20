@@ -6,8 +6,10 @@
 // allowing us to use React hooks like useState and useEffect.
 "use client";
 
-import { useEffect, useState, SyntheticEvent } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+// CHANGE ADDED: Import your new Google Auth component
+import AuthButton from '@/components/AuthButton';
 
 export default function Home() {
   // 2. STATE MANAGEMENT
@@ -26,25 +28,6 @@ export default function Home() {
   // Phase 3 - Share State
   // We track the ID of the post that was copied to show a temporary "Copied!" tooltip
   const [copiedId, setCopiedId] = useState<number | null>(null);
-
-  // Authentication Phase - User & Modal State
-  // We store the logged-in user's info (username and token) in 'user'. If 'user' is null, no one is logged in.
-  // 'showAuthModal' controls whether the Login/Register modal is visible. 'authMode' toggles between the two forms.
-  // 'authForm' holds the input values for username and password. 'authError' and 'authLoading' manage the form's feedback states.
-  const [user, setUser] = useState<{ username: string, token: string } | null>(null);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [authForm, setAuthForm] = useState({ username: '', password: '' });
-  const [authError, setAuthError] = useState('');
-  const [authLoading, setAuthLoading] = useState(false);
-
-  // Authentication Phase - Check for existing session on load
-  useEffect(() => {
-    const storedSession = localStorage.getItem('glide_session');
-    if (storedSession) {
-      setUser(JSON.parse(storedSession));
-    }
-  }, []);
 
   // 3. THE NETWORK REQUEST 
   // Refactored Fetch Logic to accept a page number
@@ -94,95 +77,90 @@ export default function Home() {
   useEffect(() => {
     if (!hasMore || loadingMore) return;
 
-    // We create a new IntersectionObserver that watches the "sentinel" div at the bottom 
-    // of the feed. When that div comes into view (meaning the user has scrolled to the bottom), 
-    // we set 'loadingMore' to true and increment the 'page' state, which triggers a new fetch.
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setLoadingMore(true);
-          setPage((prev) => prev + 1);
-        }
-      },
-      { threshold: 0.1 }
-    );
+      // We create a new IntersectionObserver that watches the "sentinel" div at the bottom 
+      // of the feed. When that div comes into view (meaning the user has scrolled to the bottom), 
+      // we set 'loadingMore' to true and increment the 'page' state, which triggers a new fetch.
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0].isIntersecting) {
+            setLoadingMore(true);
+            setPage((prev) => prev + 1);
+          }
+        },
+        { threshold: 0.1 }
+      );
 
-    // We start observing the sentinel element. If it exists, we attach the observer to it.
-    // The observer will automatically trigger the callback when the sentinel comes into view.
-    const sentinel = document.getElementById('posts-scroll-sentinel');
-    if (sentinel) observer.observe(sentinel);
+      // We start observing the sentinel element. If it exists, we attach the observer to it.
+      // The observer will automatically trigger the callback when the sentinel comes into view.
+      const sentinel = document.getElementById('posts-scroll-sentinel');
+      if (sentinel) observer.observe(sentinel);
 
-    return () => observer.disconnect();
-  }, [hasMore, loadingMore, posts]);
+      return () => observer.disconnect();
+    }, [hasMore, loadingMore, posts]);
 
-  // Authentication Phase - Handle form submission for Login/Register
-  const handleAuthSubmit = async (e: SyntheticEvent) => {
-    // Setup the form for submission: clear errors, show loading state
-    e.preventDefault();
-    setAuthError('');
-    setAuthLoading(true);
-
-    // Determine the API endpoint based on whether we're logging in or registering
-    try {
-      const res = await fetch(`http://localhost:3000/api/${authMode}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authForm)
-      });
-      
-      // We expect the response to include a 'username' and 'token' on successful login, or a success message on registration.
-      const data = await res.json();
-      
-      if (!res.ok) throw new Error(data.error || 'Authentication failed');
-
-      // If we're registering, we want to switch to the login form and prompt the user to log in. 
-      // If we're logging in, we save the session and close the modal.
-      if (authMode === 'register') {
-        // Switch to login mode and show success message
-        setAuthMode('login');
-        setAuthError('Account created! Please log in.');
-        setAuthForm(prev => ({ ...prev, password: '' })); // Clear password for security
-      } else {
-        // Save session and close modal
-        // We create a session object with the username and token returned from the server, save it to state and localStorage, and then close the modal.
-        // If we only save it in state, the user would be logged out as soon as they refresh the page. By saving it in localStorage, we can check for 
-        // an existing session when the app loads and keep the user logged in until they choose to log out. Also, we clear the auth form for security and UX reasons
-        // and close the modal to show the main app interface.
-        const sessionData = { username: data.username, token: data.token };
-        setUser(sessionData);
-        localStorage.setItem('glide_session', JSON.stringify(sessionData));
-        setShowAuthModal(false);
-        setAuthForm({ username: '', password: '' });
-      }
-    } catch (err: any) {
-      setAuthError(err.message);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  // Authentication Phase - Handle Logout
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('glide_session');
-  };
-
-  // 4. THE LIKE FUNCTION
-  // This function handles the user clicking the heart button.
+  // 4. THE LIKE FUNCTION - Hybrid UI (Optimistic Visuals + Pessimistic Math)
   const handleLike = async (id: number) => {
-    // A. Optimistic UI Update: Instantly update the state so the user feels no lag.
-    // We map over the posts, find the one that was clicked, and increment its 'likes' count by 1.
-    setPosts(posts.map(post => 
-      post.id === id ? { ...post, likes: (post.likes || 0) + 1 } : post
+    const token = localStorage.getItem('glide_token');
+    if (!token) {
+      alert("Please log in to like posts!");
+      return;
+    }
+
+    // Step 1: Check current visual state
+    const targetPost = posts.find(p => p.id === id);
+    if (!targetPost) return;
+    const isLiking = !targetPost.userLiked;
+
+    // Step 2: OPTIMISTIC VISUALS ONLY (Instantly toggle the red heart)
+    setPosts(currentPosts => currentPosts.map(post =>
+      post.id === id ? { ...post, userLiked: isLiking } : post
     ));
 
-    // B. Background Network Request: Send the actual update to the Express database
+    // POST request to the backend to update the like in the database
     try {
-      await fetch(`http://localhost:3000/api/posts/${id}/like`, {
-        method: 'PUT',
+      const res = await fetch(`http://localhost:3000/api/posts/${id}/like`, {
+        method: 'POST', 
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        }
       });
+
+      // If the token is invalid/expired, we alert the user, clear their session, and rollback the visual toggle.
+      if (res.status === 401 || res.status === 403) {
+        alert("Your session expired. Please log in again.");
+        localStorage.removeItem('glide_token');
+        localStorage.removeItem('glide_user');
+        
+        // Rollback the visual if token fails
+        setPosts(currentPosts => currentPosts.map(post =>
+          post.id === id ? { ...post, userLiked: !isLiking } : post
+        ));
+        return;
+      }
+
+      // If the response is OK, we parse the new like status from the backend and update the likes count accordingly.
+      if (res.ok) {
+        const data = await res.json(); 
+        
+        // Step 3: PESSIMISTIC MATH (Update the number ONLY after server confirms)
+        setPosts(currentPosts => currentPosts.map(post => {
+          if (post.id === id) {
+            return { 
+              ...post, 
+              // Math uses the backend's strict toggle response
+              likes: data.liked ? (post.likes || 0) + 1 : Math.max(0, (post.likes || 0) - 1) 
+            };
+          }
+          return post;
+        }));
+      }
     } catch (error) {
       console.error("Failed to update like in database:", error);
+      // Rollback the visual if the user's WiFi drops mid-click
+      setPosts(currentPosts => currentPosts.map(post =>
+        post.id === id ? { ...post, userLiked: !isLiking } : post
+      ));
     }
   };
 
@@ -226,108 +204,18 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gray-950 text-white p-4 md:p-8 relative">
       
-      {/* Authentication Phase - The Auth Modal Overlay */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-md shadow-2xl relative">
-            <button 
-              onClick={() => setShowAuthModal(false)}
-              className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-            
-            <h2 className="text-2xl font-bold mb-6 text-center">
-              {authMode === 'login' ? 'Welcome Back' : 'Join Glide'}
-            </h2>
-
-            <form onSubmit={handleAuthSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Username</label>
-                <input 
-                  type="text" 
-                  required
-                  value={authForm.username}
-                  onChange={(e) => setAuthForm({...authForm, username: e.target.value})}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
-                  placeholder="Enter your username"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Password</label>
-                <input 
-                  type="password" 
-                  required
-                  minLength={6}
-                  value={authForm.password}
-                  onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
-                  placeholder="Minimum 6 characters"
-                />
-              </div>
-              
-              {authError && (
-                <p className={`text-sm ${authError.includes('created') ? 'text-green-400' : 'text-red-400'} text-center`}>
-                  {authError}
-                </p>
-              )}
-
-              <button 
-                type="submit" 
-                disabled={authLoading}
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3 rounded-lg transition-all disabled:opacity-50 mt-4"
-              >
-                {authLoading ? 'Processing...' : (authMode === 'login' ? 'Sign In' : 'Create Account')}
-              </button>
-            </form>
-
-            <div className="mt-6 text-center text-sm text-gray-400">
-              {authMode === 'login' ? "Don't have an account? " : "Already have an account? "}
-              <button 
-                onClick={() => {
-                  setAuthMode(authMode === 'login' ? 'register' : 'login');
-                  setAuthError('');
-                }}
-                className="text-purple-400 hover:text-purple-300 font-semibold transition-colors"
-              >
-                {authMode === 'login' ? 'Register here' : 'Login here'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="max-w-2xl mx-auto">
         
         {/* Header Section */}
-        {/* Authentication Phase - Updated Header Layout with User Profile */}
         <div className="flex items-center justify-between mb-4"> 
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
             Glide
           </h1>
           
           <div>
-            {user ? (
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-full">
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-orange-500 to-purple-600"></div>
-                  <span className="text-sm font-semibold text-gray-200">{user.username}</span>
-                </div>
-                <button 
-                  onClick={handleLogout}
-                  className="text-sm text-gray-500 hover:text-red-400 transition-colors font-medium"
-                >
-                  Logout
-                </button>
-              </div>
-            ) : (
-              <button 
-                onClick={() => setShowAuthModal(true)}
-                className="bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold px-5 py-2 rounded-full border border-gray-700 transition-colors"
-              >
-                Sign In
-              </button>
-            )}
+            {/* Replaced the old manual login button with your new component */}
+            <AuthButton />
           </div>
         </div>
 
@@ -423,10 +311,19 @@ export default function Home() {
                       {/* The Like Button */}
                       <button 
                         onClick={() => handleLike(post.id)}
-                        className="flex items-center space-x-1.5 text-gray-400 hover:text-red-500 transition-colors group"
+                        // Force the button to be red if the user liked it
+                        className={`flex items-center space-x-1.5 transition-colors group ${post.userLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
                       >
                         {/* SVG Heart Icon */}
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 group-active:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <svg 
+                          xmlns="http://www.w3.org/2000/svg" 
+                          className="h-5 w-5 group-active:scale-110 transition-transform" 
+                          // Fills the inside of the heart with color if liked
+                          fill={post.userLiked ? "currentColor" : "none"} 
+                          viewBox="0 0 24 24" 
+                          stroke="currentColor" 
+                          strokeWidth={2}
+                        >
                           <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                         </svg>
                         {/* Fallback to 0 if post.likes is undefined/null */}

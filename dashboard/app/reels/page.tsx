@@ -9,6 +9,8 @@
 // 1. IMPORTS
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
+// Import the Google Auth component
+import AuthButton from '@/components/AuthButton';
 
 export default function Reels() {
   // 2. STATE MANAGEMENT
@@ -25,6 +27,9 @@ export default function Reels() {
   // Tracks the last video we restarted so we don't restart it again on unpause
   const lastPlayedIdRef = useRef<number | null>(null);
   
+  // State for the "Copied!" tooltip when sharing
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
   // 3. DATA FETCHING FUNCTION
   const fetchReels = async () => {
     try {
@@ -165,17 +170,135 @@ export default function Reels() {
     });
   }, [activeReelId, isPlaying, reels]);
 
+  // Hybrid UI Like Function
+  const handleLike = async (id: number) => {
+    // AUTH CHECK: Before allowing the user to like a reel, we check if they are authenticated by looking for a token in localStorage.
+    const token = localStorage.getItem('glide_token');
+    if (!token) {
+      alert("Please log in to like reels!");
+      return;
+    }
+
+    // OPTIMISTIC UI UPDATE: We immediately update the UI to reflect the like/unlike action for instant feedback.
+    const targetReel = reels.find(r => r.id === id);
+    if (!targetReel) return;
+    const isLiking = !targetReel.userLiked;
+
+    // OPTIMISTIC VISUALS ONLY
+    setReels(currentReels => currentReels.map(reel =>
+      reel.id === id ? { ...reel, userLiked: isLiking } : reel
+    ));
+
+    // BACKEND UPDATE: We then send a request to the backend to update the like status in the database.
+    try {
+      const res = await fetch(`http://localhost:3000/api/reels/${id}/like`, {
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+      });
+
+      // ERROR HANDLING: If the response indicates that the user's session has expired (401 or 403), we alert the user, 
+      // clear their session data, and rollback the optimistic UI update to reflect that the like action was not successful.
+      if (res.status === 401 || res.status === 403) {
+         alert("Your session expired. Please log in again.");
+         localStorage.removeItem('glide_token');
+         localStorage.removeItem('glide_user');
+         
+         // Rollback visuals
+         setReels(currentReels => currentReels.map(reel =>
+           reel.id === id ? { ...reel, userLiked: !isLiking } : reel
+         ));
+         return;
+      }
+
+      // If the response is successful, we parse the new like status from the backend and update the like count in the UI accordingly.
+      if (res.ok) {
+        const data = await res.json(); 
+        // PESSIMISTIC MATH
+        setReels(currentReels => currentReels.map(reel => {
+          if (reel.id === id) {
+            return { 
+              ...reel, 
+              likes: data.liked ? (reel.likes || 0) + 1 : Math.max(0, (reel.likes || 0) - 1) 
+            };
+          }
+          return reel;
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to update like in database:", error);
+
+      // NETWORK ERROR ROLLBACK: If there was a network error or any other issue during the fetch request, we catch the error, 
+      // log it, and rollback the optimistic UI update to maintain consistency with the actual like status in the database.
+      setReels(currentReels => currentReels.map(reel =>
+         reel.id === id ? { ...reel, userLiked: !isLiking } : reel
+      ));
+    }
+  };
+
+  // Upgraded Share function to hit the backend tracking route
+  const handleShare = async (id: number, video_id: string, title: string) => {
+    const shareUrl = `https://youtube.com/shorts/${video_id}`;
+    
+    // 1. Tell the backend to increment the share counter (Background process)
+    try {
+        await fetch(`http://localhost:3000/api/reels/${id}/share`, { method: 'POST' });
+        // Optimistically update the UI share counter
+        setReels(currentReels => currentReels.map(reel =>
+          reel.id === id ? { ...reel, shares: (reel.shares || 0) + 1 } : reel
+        ));
+    } catch (err) {
+        console.error("Failed to track share in DB", err);
+    }
+
+    // 2. Execute the actual share action for the user
+    // We first check if the Web Share API is available in the user's browser. If it is, we use it to share the reel's 
+    // title and URL natively. If the Web Share API is not available, we fall back to copying the share URL to the clipboard 
+    // and showing a "Copied!" tooltip for user feedback.
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Glide Reels',
+          text: `Check out this highlight: ${title}`,
+          url: shareUrl,
+        });
+      } catch (err) {
+        console.error("Error sharing natively:", err);
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 2000);
+      } catch (err) {
+        console.error("Failed to copy to clipboard:", err);
+      }
+    }
+  };
+
   return (
     <main className="bg-black text-white h-screen overflow-hidden flex flex-col">
       
-      {/* Top Navigation Bar */}
-      <div className="absolute top-0 w-full z-50 p-6 flex justify-center space-x-8 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
-        <Link href="/" className="text-gray-400 font-bold text-lg hover:text-white transition-colors drop-shadow-md pointer-events-auto">
-          Posts
-        </Link>
-        <span className="text-white font-bold text-lg border-b-2 border-white pb-1 drop-shadow-md">
-          Reels
-        </span>
+      {/* Top Navigation Bar with AuthButton integration */}
+      {/* Used flex-between with 3 equal width sections to keep the Posts/Reels centered while the AuthButton sits on the right */}
+      <div className="absolute top-0 w-full z-50 p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+        
+        {/* Empty left section to balance the flexbox */}
+        <div className="w-1/3"></div>
+
+        {/* Center Navigation */}
+        <div className="w-1/3 flex justify-center space-x-8 pointer-events-auto mt-2">
+          <Link href="/" className="text-gray-400 font-bold text-lg hover:text-white transition-colors drop-shadow-md">
+            Posts
+          </Link>
+          <span className="text-white font-bold text-lg border-b-2 border-white pb-1 drop-shadow-md">
+            Reels
+          </span>
+        </div>
+
+        {/* Right Authentication */}
+        <div className="w-1/3 flex justify-end pointer-events-auto">
+           <AuthButton />
+        </div>
       </div>
 
       {/* Loading check updated from 'page === 1' to 'reels.length === 0' */}
@@ -196,25 +319,14 @@ export default function Reels() {
               data-id={reel.id} // Used by the Intersection Observer
               className="reel-container h-screen w-full flex flex-col items-center justify-center snap-center relative"
             >
-              {/* The Video Container 
-                  We make sure it has 'overflow-hidden' and 'bg-black' to act as a frame.
-              */}
+              {/* The Video Container */}
               <div className="w-full max-w-md h-[75vh] bg-black rounded-xl overflow-hidden shadow-2xl relative border border-gray-800">
                 
-                {/* The Scale Trick Wrapper
-                    Div reduced from 135% to 125%. We translate it perfectly to the center.
-                    This pushes almost all the branding outside the frame while keeping the video fully visible and filling the container, 
-                    // creating a more native and immersive feel.
-                */}
+                {/* The Scale Trick Wrapper */}
                 <div className="absolute top-1/2 left-1/2 w-[125%] h-[125%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-                  {/* YouTube iFrame Embed
-                      We added 'enablejsapi=1' so we can control it via postMessage.
-                      We added 'controls=0' to hide the YouTube progress bar and make it look like a native app.
-                  */}
                   <iframe
                     id={`reel-player-${reel.id}`}
-                    className="w-full h-full pointer-events-none" // pointer-events-none prevents YouTube from stealing our clicks!
-                    // Added playsinline=1, iv_load_policy=3, and disablekb=1 for maximum stealth
+                    className="w-full h-full pointer-events-none" 
                     src={`https://www.youtube.com/embed/${reel.video_id}?enablejsapi=1&autoplay=0&controls=0&rel=0&modestbranding=1&loop=1&playlist=${reel.video_id}&playsinline=1&iv_load_policy=3&disablekb=1`}
                     title={reel.title}
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -222,22 +334,16 @@ export default function Reels() {
                   ></iframe>
                 </div>
 
-                {/* The Transparent Overlay (The Click Catcher) 
-                    Made aggressive blur and high Z-index.
-                    Clicks are intercepted here, and on pause, we aggressively blur the misleading elements behind it.
-                */}
+                {/* The Transparent Overlay (The Click Catcher) */}
                 <div 
                   className="absolute inset-0 z-20 cursor-pointer"
                   onClick={() => {
-                    // Only allow pausing/playing if this is the active video
                     if (activeReelId === reel.id) {
                       setIsPlaying(!isPlaying);
                     }
                   }}
                 >
-                  {/* Big Play Button Icon that shows up when paused */}
                   {!isPlaying && activeReelId === reel.id && (
-                    // We apply a heavy backdrop-blur and z-index to completely obscure YouTube's misleading elements while standardizing the experience with our own standard icon.
                     <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-lg transition-all duration-300">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 text-white opacity-90 drop-shadow-2xl" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
@@ -246,10 +352,52 @@ export default function Reels() {
                   )}
                 </div>
 
-                {/* Video Metadata Overlay 
-                    Correct z-index to cover bottom floating bars for standard data.
-                */}
-                <div className="absolute bottom-0 left-0 w-full p-6 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none z-30">
+                {/* Right-Side Action Bar (Like & Share) */}
+                <div className="absolute right-4 bottom-24 flex flex-col items-center space-y-6 z-40 pointer-events-auto">
+                  
+                  {/* Like Button */}
+                  <button 
+                    onClick={() => handleLike(reel.id)} 
+                    className="flex flex-col items-center group transition-transform active:scale-90"
+                  >
+                    <div className="bg-black/40 p-3 rounded-full backdrop-blur-md mb-1 border border-white/10 group-hover:bg-black/60 transition-colors">
+                      <svg 
+                        xmlns="http://www.w3.org/2000/svg" 
+                        className={`w-7 h-7 transition-colors ${reel.userLiked ? 'text-red-500' : 'text-white'}`} 
+                        fill={reel.userLiked ? "currentColor" : "none"} 
+                        viewBox="0 0 24 24" 
+                        stroke="currentColor" 
+                        strokeWidth={2}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-white text-xs font-semibold drop-shadow-md">{reel.likes || 0}</span>
+                  </button>
+
+                  {/* Share Button */}
+                  <button 
+                    onClick={() => handleShare(reel.id, reel.video_id, reel.title)} 
+                    className="flex flex-col items-center group relative transition-transform active:scale-90"
+                  >
+                    <div className="bg-black/40 p-3 rounded-full backdrop-blur-md mb-1 border border-white/10 group-hover:bg-black/60 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                      </svg>
+                    </div>
+                    <span className="text-white text-xs font-semibold drop-shadow-md">{reel.shares || 0}</span>
+                    
+                    {copiedId === reel.id && (
+                      <span className="absolute right-14 top-2 bg-white text-black text-xs font-bold px-3 py-1.5 rounded-lg shadow-xl whitespace-nowrap animate-bounce">
+                        Copied!
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                {/* Video Metadata Overlay */}
+                {/* Adjusted padding on the right (pr-20) so text doesn't overlap the buttons */}
+                <div className="absolute bottom-0 left-0 w-full p-6 pr-20 bg-gradient-to-t from-black via-black/80 to-transparent pointer-events-none z-30">
                   <h3 className="text-lg font-bold text-white leading-snug drop-shadow-lg">{reel.title}</h3>
                   <p className="text-sm text-gray-300 mt-2 font-medium bg-white/10 backdrop-blur-sm inline-block px-3 py-1 rounded-full shadow-sm">@{reel.channel_name}</p>
                 </div>
