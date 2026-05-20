@@ -41,8 +41,13 @@ export default function Reels() {
       // Generate a string of all the video IDs currently sitting in React state
       const currentIds = reels.map(r => r.id).join(',');
 
-      // Request 3 random reels, strictly excluding the ones we already have!
-      const res = await fetch(`http://localhost:3000/api/reels?limit=3&exclude=${currentIds}`);
+      // Grab the token and attach it to the GET request headers
+      const token = localStorage.getItem('glide_token');
+      const headers: Record<string, string>= token ? { 'Authorization': `Bearer ${token}` } : {};
+
+      const res = await fetch(`http://localhost:3000/api/reels?limit=3&exclude=${currentIds}`, {
+        headers
+      });
       const data = await res.json();
       
       // If no more reels are returned, we set hasMore to false to stop further loading.

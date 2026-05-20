@@ -227,25 +227,61 @@ app.post('/api/posts', (req, res) => {
 // 9. READING DATA (The GET Route - 'read operation')
 // Big Picture: When a user opens Glide on their phone or laptop, the UI is completely empty. 
 // The frontend immediately fires off a GET request to your server asking for the latest data to display.
-// Upgraded with Phase 2 Pagination and Sorting by Timestamp (Newest First)
 app.get('/api/posts', (req, res) => {
     // Extract query parameters with fallbacks (default to page 1, limit 5)
     // We use a small limit of 5 so you can easily test the "Load More" button!
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 5;
     
-    // 2. Calculate the offset (e.g., if page 2 and limit 5, skip the first 5 records)
+    // Calculate the offset (e.g., if page 2 and limit 5, skip the first 5 records)
     const offset = (page - 1) * limit;
 
-    // 3. Inject LIMIT and OFFSET into the SQL query
-    const sql = `SELECT * FROM posts ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
+    // Authentication Check - We check if the frontend sent a token. If they did, 
+    // we figure out who they are. This allows us to personalize the feed in the future 
+    // (e.g., show which posts they've liked).
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    let userId = null;
 
-    db.all(sql, [limit, offset], (err, rows) => {
+    // If there's a token, we try to verify it. If it's valid, we extract the user ID from the token's payload.
+    if (token) {
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            userId = decoded.userId;
+        } catch (err) {
+            // Ignore expired tokens on the GET request; just treat them as a logged-out guest
+        }
+    }
+
+    // Dynamic SQL based on Auth Status
+    // If we have a userId, we ask SQLite to check the post_likes junction table for a match.
+    // This way, each post in the feed will come back with an extra field 'userLiked' that is true if this user has liked it, and false otherwise.
+    const sql = userId 
+        ? `SELECT posts.*, EXISTS(SELECT 1 FROM post_likes WHERE post_id = posts.id AND user_id = ?) AS userLiked 
+           FROM posts ORDER BY timestamp DESC LIMIT ? OFFSET ?`
+        : `SELECT posts.*, 0 AS userLiked 
+           FROM posts ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
+
+    // The parameters we pass to the database depend on whether we have a userId or not. 
+    // If we do, we need to include it for the subquery that checks if the user liked each post.
+    const params = userId ? [userId, limit, offset] : [limit, offset];
+
+    // Finally, we execute the query. If there's an error, we log it and return a 500 status. 
+    // If it's successful, we return the rows of posts as JSON.
+    db.all(sql, params, (err, rows) => {
         if (err) {
             console.error("Error fetching data:", err.message);
             return res.status(500).json({ error: 'Failed to retrieve feed' });
         }
-        res.status(200).json(rows);
+
+        // SQLite returns 1 for true and 0 for false. We map it to standard strict booleans for React.
+        // We take each row of the result and create a new object that has all the same fields (...row) but overrides 'userLiked' to be a boolean.
+        const formattedRows = rows.map(row => ({
+            ...row,
+            userLiked: row.userLiked === 1
+        }));
+
+        res.status(200).json(formattedRows);                                55
     });
 });
 
@@ -359,11 +395,31 @@ app.get('/api/reels', (req, res) => {
     const limit = parseInt(req.query.limit) || 3;
     const exclude = req.query.exclude || ''; // Capture the list of IDs from the frontend
     
-    // Default SQL: Random selection
-    // We start with a simple query that selects random reels up to the specified limit.
-    // This gives us a fresh mix of reels each time, rather than just the newest ones.
-    let sql = `SELECT * FROM reels ORDER BY RANDOM() LIMIT ?`;
-    let params = [limit];
+    // Optional Authentication Check
+    // If the frontend sends a token, we verify it to get the user ID. 
+    // This allows us to personalize the reels feed in the future (e.g., show which reels they've liked).
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    let userId = null;
+
+    // If there's a token, we try to verify it. If it's valid, we extract the 
+    // user ID from the token's payload.
+    if (token) {
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            userId = decoded.userId;
+        } catch (err) {}
+    }
+
+    // Dynamic SQL builder - if we have a userId, we include the subquery to check if they've liked each reel.
+    let sql = userId
+        ? `SELECT reels.*, EXISTS(SELECT 1 FROM reel_likes WHERE reel_id = reels.id AND user_id = ?) AS userLiked FROM reels`
+        : `SELECT reels.*, 0 AS userLiked FROM reels`;
+    
+    // The 'exclude' parameter allows the frontend to tell us which reels it has already displayed, 
+    // so we can avoid showing the same ones again as the user scrolls.
+    let params = [];
+    if (userId) params.push(userId); // Add userId first if it exists
 
     // If the frontend sends IDs to exclude, we inject the NOT IN clause
     // This allows us to avoid showing the same reels repeatedly as the user loads more.
@@ -379,17 +435,27 @@ app.get('/api/reels', (req, res) => {
             // This is important for parameterized queries to prevent SQL injection. We can't just inject the IDs directly into the SQL string.
             // For example, if excludeIds has 3 IDs, we need "?, ?, ?" in the SQL to safely substitute those values.
             const placeholders = excludeIds.map(() => '?').join(',');
-            sql = `SELECT * FROM reels WHERE id NOT IN (${placeholders}) ORDER BY RANDOM() LIMIT ?`;
-
-            // The parameters for the query will be the list of IDs to exclude followed by the limit.
-            params = [...excludeIds, limit];
+            sql += ` WHERE id NOT IN (${placeholders})`;
+            params.push(...excludeIds); // Push all excluded IDs into the params array
         }
     }
 
-    // Finally, we execute the query with the constructed SQL and parameters. The database engine will safely substitute the parameters into the query.
+    // Finally, we add the ORDER BY RANDOM() clause to shuffle the results and the LIMIT clause to cap how many we return.
+    sql += ` ORDER BY RANDOM() LIMIT ?`;
+    params.push(limit); // Finally, cap it off with the limit
+
+    // Finally, we execute the query with the constructed SQL and parameters. 
+    // The database engine will safely substitute the parameters into the query.
     db.all(sql, params, (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
+
+        // Map SQLite 1/0 to true/false
+        const formattedRows = rows.map(row => ({
+            ...row,
+            userLiked: row.userLiked === 1
+        }));
+
+        res.json(formattedRows);
     });
 });
 

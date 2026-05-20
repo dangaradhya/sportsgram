@@ -38,8 +38,13 @@ export default function Home() {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // We now pass the page parameter to our Express API
-      const res = await fetch(`http://localhost:3000/api/posts?page=${pageNum}&limit=5`);
+      // Grab the token and attach it to the GET request headers
+      const token = localStorage.getItem('glide_token');
+      const headers: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+      const res = await fetch(`http://localhost:3000/api/posts?page=${pageNum}&limit=5`, { 
+        headers 
+      });
       const data = await res.json();
 
       if (data.length === 0) {
