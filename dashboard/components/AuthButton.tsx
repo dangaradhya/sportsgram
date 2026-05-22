@@ -4,6 +4,8 @@
 import { useState, useEffect } from 'react';
 import { GoogleLogin, googleLogout } from '@react-oauth/google';
 
+import Link from 'next/link'; 
+
 // AuthButton component handles Google OAuth login/logout and displays user info
 export default function AuthButton() {
   // State to hold user information after successful login 
@@ -64,14 +66,18 @@ export default function AuthButton() {
   if (user) {
     return (
       <div className="flex items-center space-x-3 bg-white/10 rounded-full pr-4 p-1 backdrop-blur-md border border-white/20 shadow-lg">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img 
-            src={user.picture} 
-            alt="Profile" 
-            className="w-8 h-8 rounded-full border border-white/50" 
-            referrerPolicy="no-referrer"
-        />
-        <span className="text-sm font-medium text-white">{user.name.split(' ')[0]}</span>
+       {/* Wrap the profile picture and name in a Link to the profile page */}
+       <Link href="/profile" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img 
+              src={user.picture} 
+              alt="Profile" 
+              className="w-8 h-8 rounded-full border border-white/50" 
+              referrerPolicy="no-referrer"
+          />
+          <span className="text-sm font-medium text-white cursor-pointer">{user.name.split(' ')[0]}</span>
+        </Link>
+
         <button 
           onClick={handleLogout}
           className="text-xs text-gray-300 hover:text-white transition-colors ml-2"
