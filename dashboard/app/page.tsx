@@ -8,8 +8,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-// CHANGE ADDED: Import your new Google Auth component
+// Import your Google Auth and Theme Toggle component for use in the header
 import AuthButton from '@/components/AuthButton';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default function Home() {
   // 2. STATE MANAGEMENT
@@ -263,7 +264,8 @@ export default function Home() {
     : posts.filter(post => post.sport_category === activeCategory);
 
   return (
-    <main className="min-h-screen bg-gray-950 text-white p-4 md:p-8 relative">
+    // Adjusted background/text colors for Light/Dark mode with a smooth transition
+    <main className="min-h-screen bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-white p-4 md:p-8 relative transition-colors duration-300">
       
 
       <div className="max-w-2xl mx-auto">
@@ -274,7 +276,9 @@ export default function Home() {
             Glide
           </h1>
           
-          <div>
+          {/* Placed the ThemeToggle next to the AuthButton */}
+          <div className="flex items-center space-x-4">
+            <ThemeToggle />
             {/* Replaced the old manual login button with your new component */}
             <AuthButton />
           </div>
@@ -282,10 +286,10 @@ export default function Home() {
 
         {/* Navigation Section */}
         <div className="flex justify-center space-x-8 mb-8">
-          <span className="text-white font-bold text-lg border-b-2 border-purple-500 pb-1">
+          <span className="text-gray-900 dark:text-white font-bold text-lg border-b-2 border-purple-500 pb-1">
             Posts
           </span>
-          <Link href="/reels" className="text-gray-400 font-bold text-lg hover:text-white transition-colors">
+          <Link href="/reels" className="text-gray-500 dark:text-gray-400 font-bold text-lg hover:text-gray-900 dark:hover:text-white transition-colors">
             Reels
           </Link>
         </div>
@@ -293,10 +297,10 @@ export default function Home() {
         {/* 8. CONDITIONAL RENDERING */}
         {loading && page === 1 ? (
           // Show this while waiting for the Express server to reply
-          <p className="text-center text-gray-400 animate-pulse mt-20">Loading the latest news...</p>
+          <p className="text-center text-gray-500 dark:text-gray-400 animate-pulse mt-20">Loading the latest news...</p>
         ) : posts.length === 0 ? (
           // Show this if the database is empty
-          <p className="text-center text-gray-400 mt-20">No news in the database yet. Run the scraper!</p>
+          <p className="text-center text-gray-500 dark:text-gray-400 mt-20">No news in the database yet. Run the scraper!</p>
         ) : (
           <>
             {/* The Category Filter Bar UI */}
@@ -308,7 +312,7 @@ export default function Home() {
                   className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-200 ${
                     activeCategory === category
                       ? 'bg-purple-600 text-white shadow-md shadow-purple-500/30 border border-purple-500'
-                      : 'bg-gray-900 text-gray-400 hover:bg-gray-800 hover:text-gray-200 border border-gray-800'
+                      : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-800'
                   }`}
                 >
                   {category}
@@ -320,14 +324,14 @@ export default function Home() {
             {/* We now loop through 'filteredPosts' instead of 'posts' */}
             <div className="space-y-6">
               {filteredPosts.map((post: any) => (
-                <div key={post.id} className="bg-gray-900 border border-gray-800 rounded-xl p-6 shadow-lg hover:border-gray-700 transition-colors group overflow-hidden">
+                <div key={post.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-md dark:shadow-lg hover:border-gray-300 dark:hover:border-gray-700 transition-colors group overflow-hidden">
                   
                   {/* Top Row: Category Badge and Timestamp */}
                   <div className="flex justify-between items-center mb-4">
-                    <span className="bg-blue-500/10 text-blue-400 text-xs font-semibold px-2.5 py-0.5 rounded uppercase tracking-wider">
+                    <span className="bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-semibold px-2.5 py-0.5 rounded uppercase tracking-wider">
                       {post.sport_category}
                     </span>
-                    <span className="text-gray-500 text-xs">
+                    <span className="text-gray-400 dark:text-gray-500 text-xs">
                       {new Date(post.timestamp).toLocaleDateString()}
                     </span>
                   </div>
@@ -335,7 +339,7 @@ export default function Home() {
                   {/* Image Rendering Phase - The actual image container! */}
                   {/* We use standard img tag, set a fixed height for consistency, and add a hover scale effect */}
                   {post.image_url && (
-                    <div className="w-full h-48 md:h-64 rounded-xl overflow-hidden mb-5 bg-gray-800 relative">
+                    <div className="w-full h-48 md:h-64 rounded-xl overflow-hidden mb-5 bg-gray-200 dark:bg-gray-800 relative">
                       <img 
                         src={post.image_url} 
                         alt={post.headline}
@@ -347,20 +351,20 @@ export default function Home() {
 
                   {/* Main Content: AI Generated Headline & Summary */}
                   <h2 className="text-xl font-bold mb-3">{post.headline}</h2>
-                  <p className="text-gray-300 text-sm mb-4 leading-relaxed">{post.content}</p>
+                  <p className="text-gray-600 dark:text-gray-300 text-sm mb-4 leading-relaxed">{post.content}</p>
 
                   {/* Bottom Row now includes the interactive Like button */}
-                  <div className="flex justify-between items-center border-t border-gray-800 pt-4 mt-4">
+                  <div className="flex justify-between items-center border-t border-gray-100 dark:border-gray-800 pt-4 mt-4">
                     
                     {/* Left Side: Excitement Meter */}
                     <div className="flex items-center space-x-2">
-                      <span className="text-xs text-gray-400">Excitement:</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Excitement:</span>
                       <div className="flex">
                         {/* We dynamically generate a visual meter based on the 1-10 excitement_level */}
                         {[...Array(10)].map((_, i) => (
                           <div 
                             key={i} 
-                            className={`h-1.5 w-3 mx-px rounded-full ${i < post.excitement_level ? 'bg-gradient-to-r from-orange-500 to-red-500' : 'bg-gray-800'}`}
+                            className={`h-1.5 w-3 mx-px rounded-full ${i < post.excitement_level ? 'bg-gradient-to-r from-orange-500 to-red-500' : 'bg-gray-200 dark:bg-gray-800'}`}
                           />
                         ))}
                       </div>
@@ -412,7 +416,7 @@ export default function Home() {
                       {/* The Share Button */}
                       <button 
                         onClick={() => handleShare(post.id, post.url, post.headline)}
-                        className="flex items-center space-x-1 text-gray-400 hover:text-blue-400 transition-colors group relative"
+                        className="flex items-center space-x-1 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors group relative"
                         title="Share this post"
                       >
                         {/* SVG Share Icon */}
@@ -422,7 +426,7 @@ export default function Home() {
                         
                         {/* Dynamic Tooltip: Only shows if this specific post was copied */}
                         {copiedId === post.id && (
-                          <span className="absolute -top-10 -left-4 bg-gray-700 text-white text-xs font-semibold px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap animate-pulse">
+                          <span className="absolute -top-10 -left-4 bg-gray-800 dark:bg-gray-700 text-white text-xs font-semibold px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap animate-pulse">
                             Copied!
                           </span>
                         )}
@@ -432,7 +436,7 @@ export default function Home() {
                         href={post.url} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="text-sm text-purple-400 hover:text-purple-300 font-medium"
+                        className="text-sm text-purple-600 hover:text-purple-500 dark:text-purple-400 dark:hover:text-purple-300 font-medium"
                       >
                         Read Source &rarr;
                       </a>

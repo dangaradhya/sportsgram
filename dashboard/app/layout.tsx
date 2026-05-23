@@ -1,8 +1,11 @@
+// app/layout.tsx
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 // Integrated Google OAuth Provider for Authentication
 import { GoogleOAuthProvider } from '@react-oauth/google'; 
 import "./globals.css";
+// Import your theme provider
+import { Providers } from './providers';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,14 +34,22 @@ export default function RootLayout({
 
   // The layout includes the GoogleOAuthProvider at the top level, ensuring that all child components can access authentication features without additional setup.
   return (
+    // suppressHydrationWarning added to html tag (required by next-themes)
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
-        <GoogleOAuthProvider clientId={clientId}>
-          {children}
-        </GoogleOAuthProvider>
+      {/* Added light/dark default background and text colors, plus a smooth CSS transition */}
+      <body className="min-h-full flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-white transition-colors duration-300">
+        
+        {/* Wrapped the entire application in your new theme Providers */}
+        <Providers>
+          <GoogleOAuthProvider clientId={clientId}>
+            {children}
+          </GoogleOAuthProvider>
+        </Providers>
+
       </body>
     </html>
   );

@@ -5,6 +5,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AuthButton from '@/components/AuthButton';
+// Import the ThemeToggle component
+import ThemeToggle from '@/components/ThemeToggle';
 
 // The main ProfileVault component that displays the user's liked/saved posts and reels in a tabbed interface
 export default function ProfileVault() {
@@ -66,7 +68,8 @@ export default function ProfileVault() {
   const activeData = vault[activeTab];
 
   return (
-    <main className="min-h-screen bg-gray-950 text-white p-4 md:p-8">
+    // Dynamic bg-gray-100/bg-gray-950 classes for Light/Dark mode
+    <main className="min-h-screen bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-white p-4 md:p-8 transition-colors duration-300">
       <div className="max-w-6xl mx-auto">
         
         {/* Header Section - Text-only header matching the other pages */}
@@ -76,7 +79,9 @@ export default function ProfileVault() {
               Glide
             </h1>
           </Link>
-          <div>
+          {/* Added ThemeToggle next to the AuthButton */}
+          <div className="flex items-center space-x-4">
+            <ThemeToggle />
             <AuthButton />
           </div>
         </div>
@@ -88,19 +93,20 @@ export default function ProfileVault() {
         ) : (
           <>
             {/* User Profile Header */}
-            <div className="flex flex-col items-center mb-12 bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl">
+            {/* Dynamic background, borders, and shadows for Light/Dark mode */}
+            <div className="flex flex-col items-center mb-12 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-8 shadow-md dark:shadow-2xl transition-colors">
               <img 
                 src={userProfile?.picture} 
                 alt="Profile" 
-                className="w-24 h-24 rounded-full border-4 border-gray-800 shadow-lg mb-4"
+                className="w-24 h-24 rounded-full border-4 border-gray-200 dark:border-gray-800 shadow-lg mb-4"
                 referrerPolicy="no-referrer"
               />
               <h1 className="text-3xl font-bold">{userProfile?.name}</h1>
-              <p className="text-gray-400 mt-1">{userProfile?.email}</p>
+              <p className="text-gray-500 dark:text-gray-400 mt-1">{userProfile?.email}</p>
             </div>
 
             {/* The Tab Navigation */}
-            <div className="flex justify-center space-x-2 md:space-x-6 mb-8 border-b border-gray-800 pb-4 overflow-x-auto scrollbar-hide">
+            <div className="flex justify-center space-x-2 md:space-x-6 mb-8 border-b border-gray-200 dark:border-gray-800 pb-4 overflow-x-auto scrollbar-hide">
               {[
                 { id: 'likedPosts', label: 'Liked Posts' },
                 { id: 'savedPosts', label: 'Saved Posts' },
@@ -112,42 +118,44 @@ export default function ProfileVault() {
                   onClick={() => setActiveTab(tab.id as any)}
                   className={`px-4 py-2 font-bold text-sm md:text-base rounded-full transition-all whitespace-nowrap ${
                     activeTab === tab.id 
-                      ? 'bg-white text-black' 
-                      : 'text-gray-400 hover:text-white hover:bg-gray-900'
+                      // Specific active tab styles for light and dark modes
+                      ? 'bg-gray-900 text-white dark:bg-white dark:text-black' 
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-900'
                   }`}
                 >
-                  {tab.label} <span className="ml-2 bg-gray-800/50 text-xs px-2 py-0.5 rounded-full">{vault[tab.id as keyof typeof vault].length}</span>
+                  {tab.label} <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${activeTab === tab.id ? 'bg-gray-700 dark:bg-gray-200' : 'bg-gray-200 dark:bg-gray-800/50'}`}>{vault[tab.id as keyof typeof vault].length}</span>
                 </button>
               ))}
             </div>
 
             {/* The Grid Display */}
             {activeData.length === 0 ? (
-              <div className="text-center py-20 text-gray-500 font-medium">
+              <div className="text-center py-20 text-gray-500 dark:text-gray-400 font-medium">
                 No items found in this section yet.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 
                 {activeData.map((item: any) => (
-                  <div key={item.id} className="bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-lg flex flex-col h-full group hover:border-gray-700 transition-colors">
+                  // Dynamic card backgrounds matching the main feed
+                  <div key={item.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5 shadow-md dark:shadow-lg flex flex-col h-full group hover:border-gray-300 dark:hover:border-gray-700 transition-colors">
                     
                     {/* Render Post Layout */}
                     {item.headline && (
                       <>
                         <div className="flex justify-between items-center mb-3">
-                          <span className="bg-blue-500/10 text-blue-400 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-widest">
+                          <span className="bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-widest">
                             {item.sport_category}
                           </span>
                         </div>
                         {item.image_url && (
-                          <div className="w-full h-32 rounded-lg overflow-hidden mb-4 bg-gray-800 relative">
+                          <div className="w-full h-32 rounded-lg overflow-hidden mb-4 bg-gray-200 dark:bg-gray-800 relative">
                             <img src={item.image_url} alt={item.headline} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                           </div>
                         )}
                         <h3 className="text-md font-bold mb-2 line-clamp-2 leading-tight">{item.headline}</h3>
                         <div className="mt-auto pt-4 flex justify-between items-center">
-                          <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-400 hover:text-purple-300 font-bold">
+                          <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-600 hover:text-purple-500 dark:text-purple-400 dark:hover:text-purple-300 font-bold">
                             Read Original &rarr;
                           </a>
                         </div>
@@ -166,7 +174,7 @@ export default function ProfileVault() {
                             </div>
                          </div>
                          <h3 className="text-md font-bold mb-1 line-clamp-2 leading-tight">{item.title}</h3>
-                         <p className="text-xs text-gray-400 mt-auto font-medium">@{item.channel_name}</p>
+                         <p className="text-xs text-gray-600 dark:text-gray-400 mt-auto font-medium">@{item.channel_name}</p>
                       </>
                     )}
 

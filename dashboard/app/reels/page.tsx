@@ -11,6 +11,8 @@ import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 // Import the Google Auth component
 import AuthButton from '@/components/AuthButton';
+// Import the ThemeToggle component
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default function Reels() {
   // 2. STATE MANAGEMENT
@@ -335,27 +337,31 @@ export default function Reels() {
   };
 
   return (
-    <main className="bg-black text-white h-screen overflow-hidden flex flex-col">
+    // bg-gray-100/bg-black switch for the main container
+    <main className="bg-gray-100 dark:bg-black text-gray-900 dark:text-white h-screen overflow-hidden flex flex-col transition-colors duration-300">
       
       {/* Top Navigation Bar with AuthButton integration */}
-      {/* Used flex-between with 3 equal width sections to keep the Posts/Reels centered while the AuthButton sits on the right */}
-      <div className="absolute top-0 w-full z-50 p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+      {/* Adapted the gradient overlay for both light and dark themes */}
+      <div className="absolute top-0 w-full z-50 p-6 flex justify-between items-start bg-gradient-to-b from-gray-100/90 dark:from-black/80 to-transparent pointer-events-none">
         
         {/* Empty left section to balance the flexbox */}
         <div className="w-1/3"></div>
 
         {/* Center Navigation */}
         <div className="w-1/3 flex justify-center space-x-8 pointer-events-auto mt-2">
-          <Link href="/" className="text-gray-400 font-bold text-lg hover:text-white transition-colors drop-shadow-md">
+          {/* Adapted the inactive/active link colors for light and dark themes */}
+          <Link href="/" className="text-gray-500 dark:text-gray-400 font-bold text-lg hover:text-gray-900 dark:hover:text-white transition-colors drop-shadow-md">
             Posts
           </Link>
-          <span className="text-white font-bold text-lg border-b-2 border-white pb-1 drop-shadow-md">
+          <span className="text-gray-900 dark:text-white font-bold text-lg border-b-2 border-gray-900 dark:border-white pb-1 drop-shadow-md">
             Reels
           </span>
         </div>
 
         {/* Right Authentication */}
-        <div className="w-1/3 flex justify-end pointer-events-auto">
+        {/* Injected the ThemeToggle button next to the AuthButton */}
+        <div className="w-1/3 flex justify-end items-center space-x-4 pointer-events-auto">
+           <ThemeToggle />
            <AuthButton />
         </div>
       </div>
@@ -363,11 +369,11 @@ export default function Reels() {
       {/* Loading check updated from 'page === 1' to 'reels.length === 0' */}
       {loading && reels.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-gray-400 animate-pulse font-medium">Tuning into the broadcast...</p>
+          <p className="text-gray-500 dark:text-gray-400 animate-pulse font-medium">Tuning into the broadcast...</p>
         </div>
       ) : reels.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-gray-400">No reels found. Run the scraper!</p>
+          <p className="text-gray-500 dark:text-gray-400">No reels found. Run the scraper!</p>
         </div>
       ) : (
         /* The Scroll Snapping Container */
@@ -379,7 +385,8 @@ export default function Reels() {
               className="reel-container h-screen w-full flex flex-col items-center justify-center snap-center relative"
             >
               {/* The Video Container */}
-              <div className="w-full max-w-md h-[75vh] bg-black rounded-xl overflow-hidden shadow-2xl relative border border-gray-800">
+              {/* The video container always stays black so videos blend well, but the border adapts */}
+              <div className="w-full max-w-md h-[75vh] bg-black rounded-xl overflow-hidden shadow-2xl relative border border-gray-300 dark:border-gray-800">
                 
                 {/* The Scale Trick Wrapper */}
                 <div className="absolute top-1/2 left-1/2 w-[125%] h-[125%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
@@ -419,6 +426,7 @@ export default function Reels() {
                     onClick={() => handleLike(reel.id)} 
                     className="flex flex-col items-center group transition-transform active:scale-90"
                   >
+                    {/* The buttons over the video stay dark-themed intentionally to remain visible over bright videos */}
                     <div className="bg-black/40 p-3 rounded-full backdrop-blur-md mb-1 border border-white/10 group-hover:bg-black/60 transition-colors">
                       <svg 
                         xmlns="http://www.w3.org/2000/svg" 
@@ -494,7 +502,7 @@ export default function Reels() {
           )}
           {!hasMore && (
              <div className="h-[20vh] w-full flex items-center justify-center snap-center">
-                <p className="text-gray-500 font-medium">You've caught up on all the highlights!</p>
+                <p className="text-gray-500 dark:text-gray-400 font-medium">You've caught up on all the highlights!</p>
              </div>
           )}
         </div>
