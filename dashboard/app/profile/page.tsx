@@ -164,18 +164,21 @@ export default function ProfileVault() {
 
                     {/* Render Reel Layout */}
                     {item.video_id && (
-                      <>
-                         <div className="w-full h-48 rounded-lg overflow-hidden mb-4 bg-black relative">
-                            <img src={`https://i.ytimg.com/vi/${item.video_id}/hqdefault.jpg`} alt={item.title} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                               <div className="bg-black/50 p-3 rounded-full backdrop-blur-sm">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" /></svg>
-                               </div>
+                    // Wrap the Reel card in a Link that points to the Reels page
+                    <Link href={`/reels?reelId=${item.video_id}`}>
+                        <div className="w-full h-48 rounded-lg overflow-hidden mb-4 bg-black relative cursor-pointer hover:opacity-90 transition-opacity">
+                            <img src={`https://i.ytimg.com/vi/${item.video_id}/hqdefault.jpg`} alt={item.title} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="bg-black/50 p-3 rounded-full backdrop-blur-sm">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                                    </svg>
+                                </div>
                             </div>
-                         </div>
-                         <h3 className="text-md font-bold mb-1 line-clamp-2 leading-tight">{item.title}</h3>
-                         <p className="text-xs text-gray-600 dark:text-gray-400 mt-auto font-medium">@{item.channel_name}</p>
-                      </>
+                        </div>
+                        <h3 className="text-md font-bold mb-1 line-clamp-2 leading-tight">{item.title}</h3>
+                        <p className="text-xs text-gray-400 mt-auto font-medium">@{item.channel_name}</p>
+                    </Link>
                     )}
 
                   </div>

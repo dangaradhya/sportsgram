@@ -13,6 +13,7 @@ import Link from 'next/link';
 import AuthButton from '@/components/AuthButton';
 // Import the ThemeToggle component
 import ThemeToggle from '@/components/ThemeToggle';
+import { useSearchParams } from 'next/navigation'; 
 
 export default function Reels() {
   // 2. STATE MANAGEMENT
@@ -32,6 +33,10 @@ export default function Reels() {
   // State for the "Copied!" tooltip when sharing
   const [copiedId, setCopiedId] = useState<number | null>(null);
 
+  // Extract the reelId from the URL query parameters to allow deep linking to specific reels
+  const searchParams = useSearchParams();
+  const targetReelId = searchParams.get('reelId');
+
   // 3. DATA FETCHING FUNCTION
   const fetchReels = async () => {
     try {
@@ -47,7 +52,9 @@ export default function Reels() {
       const token = localStorage.getItem('glide_token');
       const headers: Record<string, string>= token ? { 'Authorization': `Bearer ${token}` } : {};
 
-      const res = await fetch(`http://localhost:3000/api/reels?limit=3&exclude=${currentIds}`, {
+      // Forward targetReelId directly into your server endpoint layout parameters
+      const urlParam = targetReelId && reels.length === 0 ? `&reelId=${targetReelId}` : '';
+      const res = await fetch(`http://localhost:3000/api/reels?limit=3&exclude=${currentIds}${urlParam}`, {
         headers
       });
       const data = await res.json();
@@ -67,6 +74,13 @@ export default function Reels() {
           });
           return newReels;
         });
+
+        // Instantly bind active state playback metrics directly onto your top item to solidify render priorities
+        // If the user came from a deep link with a targetReelId, we want to set that as the active reel immediately to 
+        // ensure it plays as soon as it loads.
+        if (targetReelId && reels.length === 0 && data.length > 0) {
+          setActiveReelId(data[0].id);
+        }
       }
       setLoading(false);
       setLoadingMore(false);
@@ -83,6 +97,35 @@ export default function Reels() {
     // We intentionally leave out dependencies here because we only want to fetch once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Deep Link Navigation Watcher
+  // When a user lands from the profile vault page with a targetReelId parameter in the URL,
+  // this effect runs as soon as our reels feed list hydrates, locate the matching item, 
+  // and smoothly centers it on screen.
+  useEffect(() => {
+    if (targetReelId && reels.length > 0) {
+      // We look for the DOM element that has a data-video-id attribute matching the targetReelId from the URL.
+      // This allows us to directly target the specific reel that the user wants to view, even if it's not the first one in the list.
+      // By using document.querySelector with a data attribute selector, we can find the exact element that represents the reel with the specified video ID.
+      const element = document.querySelector(`[data-video-id="${targetReelId}"]`);
+
+      // If we find the element, we call scrollIntoView with smooth behavior to center it on the screen. 
+      // This allows users to share links that directly open specific reels in view.
+      if (element) {
+        // Wrapped inside an execution microtask macro block to guarantee DOM attachment layers are complete
+        setTimeout(() => {
+          element.scrollIntoView({ behavior: 'auto', block: 'center' });
+
+          // Clear the reelId parameter from the URL address bar immediately 
+          // after the scroll snaps into place. This prevents subsequent infinite scrolls 
+          // or manual browser refreshes from getting trapped on this single video.
+          const url = new URL(window.location.href);
+          url.searchParams.delete('reelId');
+          window.history.replaceState({}, '', url.pathname);
+        }, 80);
+      }
+    }
+  }, [targetReelId, reels]);
 
   // The Intersection Observer (The Tracker)
   // This watches the screen. When a video container takes up at least 60% of the screen,
@@ -369,19 +412,21 @@ export default function Reels() {
       {/* Loading check updated from 'page === 1' to 'reels.length === 0' */}
       {loading && reels.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-400 animate-pulse font-medium">Tuning into the broadcast...</p>
+          <p className="text-gray-400 animate-pulse font-medium">Tuning into the broadcast...</p>
         </div>
       ) : reels.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-400">No reels found. Run the scraper!</p>
+          <p className="text-gray-400">No reels found. Run the scraper!</p>
         </div>
       ) : (
         /* The Scroll Snapping Container */
         <div className="flex-1 overflow-y-scroll snap-y snap-mandatory scrollbar-hide pb-20">
           {reels.map((reel) => (
+            // Included the data-video-id attribute onto your wrapping map block container to target scroll focus.
             <div 
               key={reel.id} 
               data-id={reel.id} // Used by the Intersection Observer
+              data-video-id={reel.video_id}
               className="reel-container h-screen w-full flex flex-col items-center justify-center snap-center relative"
             >
               {/* The Video Container */}

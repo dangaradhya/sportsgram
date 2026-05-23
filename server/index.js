@@ -310,7 +310,7 @@ app.get('/api/posts', (req, res) => {
             userSaved: row.userSaved === 1
         }));
 
-        res.status(200).json(formattedRows);                                55
+        res.status(200).json(formattedRows);
     });
 });
 
@@ -465,10 +465,12 @@ app.post('/api/reels', (req, res) => {
 // This GET route retrieves reels with pagination, similar to the posts route, essentially
 // fetching reels for the Next.js frontend to display in the reels section.
 // Replaced the 'page/offset' chronological logic with a dynamic 'exclude' list and 'ORDER BY RANDOM()'.
+// Upgraded GET /api/reels to safely prioritize deep-linked reel IDs from the profile vault
 app.get('/api/reels', (req, res) => {
     // We still allow a 'limit' query parameter to control how many reels we return at once (default 3).
     const limit = parseInt(req.query.limit) || 3;
     const exclude = req.query.exclude || ''; // Capture the list of IDs from the frontend
+    const forceId = req.query.reelId || null; // Capture explicit target video_id from URL query string
     
     // Optional Authentication Check
     // If the frontend sends a token, we verify it to get the user ID. 
@@ -503,28 +505,42 @@ app.get('/api/reels', (req, res) => {
         params.push(userId, userId); // For the userLiked and userSaved subqueries
     }
 
-    // If the frontend sends IDs to exclude, we inject the NOT IN clause
-    // This allows us to avoid showing the same reels repeatedly as the user loads more.
-    if (exclude) {
+    // Build the dynamic WHERE statements
+    let whereClauses = [];
+
+    // If we have an explicit target reelId from a Vault click, skip the regular exclude lists for the top item
+    if (forceId) {
+        whereClauses.push(`video_id = ?`);
+        params.push(forceId);
+    } else if (exclude) {
         // Convert the string "1,4,7" into an array of integers [1, 4, 7]
         // We also filter out any non-numeric values just in case the frontend sends something unexpected.
         // The 'exclude' query parameter is expected to be a comma-separated string of reel IDs that the frontend has already displayed.
         const excludeIds = exclude.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
         
-        // If there are valid IDs to exclude, we modify the SQL query to add a NOT IN clause.
+        // If there are valid IDs to exclude, we modify the SQL query to add a NOT IN clause safely.
+        // This tells the database to skip any reels whose IDs are in the exclude list. We also push those IDs 
+        // into the params array so they get safely substituted into the query.
         if (excludeIds.length > 0) {
             // Generate the exact number of ? placeholders needed (e.g. ?, ?, ?)
-            // This is important for parameterized queries to prevent SQL injection. We can't just inject the IDs directly into the SQL string.
-            // For example, if excludeIds has 3 IDs, we need "?, ?, ?" in the SQL to safely substitute those values.
             const placeholders = excludeIds.map(() => '?').join(',');
-            sql += ` WHERE id NOT IN (${placeholders})`;
+            whereClauses.push(`id NOT IN (${placeholders})`);
             params.push(...excludeIds); // Push all excluded IDs into the params array
         }
     }
 
-    // Finally, we add the ORDER BY RANDOM() clause to shuffle the results and the LIMIT clause to cap how many we return.
-    sql += ` ORDER BY RANDOM() LIMIT ?`;
-    params.push(limit); // Finally, cap it off with the limit
+    // If any clauses were added, safely combine them and append a single WHERE keyword to the SQL statement
+    if (whereClauses.length > 0) {
+        sql += ` WHERE ` + whereClauses.join(' AND ');
+    }
+
+   // If 'forceId' is present, we want to fetch that specific reel, so we limit the results to 1 without randomization.
+   // If 'forceId' is not present, we want to fetch a random selection of reels while respecting the exclude list, so we 
+   // order by RANDOM() and limit by the specified number.
+   sql += forceId ? ` LIMIT 1` : ` ORDER BY RANDOM() LIMIT ?`;
+   if (!forceId) {
+       params.push(limit);
+   }
 
     // Finally, we execute the query with the constructed SQL and parameters. 
     // The database engine will safely substitute the parameters into the query.
@@ -538,7 +554,38 @@ app.get('/api/reels', (req, res) => {
             userSaved: row.userSaved === 1
         }));
 
-        res.json(formattedRows);
+        // Dual-stage response padding layout
+        // If we forced a single specific video, immediately run a background fallback query 
+        // to grab normal random items, so the layout feed isn't an empty dead-end string.
+        if (forceId && formattedRows.length > 0) {
+            let fallbackSql = userId
+                ? `SELECT reels.*, 
+                   EXISTS(SELECT 1 FROM reel_likes WHERE reel_id = reels.id AND user_id = ?) AS userLiked,
+                   EXISTS(SELECT 1 FROM saved_reels WHERE reel_id = reels.id AND user_id = ?) AS userSaved
+                   FROM reels WHERE video_id != ? ORDER BY RANDOM() LIMIT ?`
+                : `SELECT reels.*, 0 AS userLiked, 0 AS userSaved FROM reels WHERE video_id != ? ORDER BY RANDOM() LIMIT ?`;
+
+            let fallbackParams = userId ? [userId, userId, forceId, limit] : [forceId, limit];
+            
+            // We run the fallback query in the background. If it fails, we just return the single forced video. 
+            // If it succeeds, we append those random videos to the response.
+            db.all(fallbackSql, fallbackParams, (fallbackErr, fallbackRows) => {
+                if (fallbackErr) return res.json(formattedRows); // Gracefully fall back to single video if query drops
+                
+                // Map the fallback rows to convert userLiked and userSaved to booleans as well
+                const formattedFallback = fallbackRows.map(row => ({
+                    ...row,
+                    userLiked: row.userLiked === 1,
+                    userSaved: row.userSaved === 1
+                }));
+
+                // Combine the requested video AT THE TOP [0] with random videos appended below it
+                res.json([...formattedRows, ...formattedFallback]);
+            });
+        } else {
+            // Normal passive random scrolling response stream
+            res.json(formattedRows);
+        }
     });
 });
 
