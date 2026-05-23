@@ -240,6 +240,60 @@ export default function Reels() {
     }
   };
 
+  // The Save Function (Optimistic UI for Bookmarks)
+  const handleSave = async (id: number) => {
+    // Similar to the like function, we first check if the user is authenticated by looking for a token in localStorage. 
+    // If they are not logged in, we alert them and exit the function.
+    const token = localStorage.getItem('glide_token');
+    if (!token) {
+      alert("Please log in to save reels!");
+      return;
+    }
+
+    // We find the target reel in our current state to determine if we are saving or unsaving it. We then optimistically update 
+    // the UI to reflect the new save status immediately for instant feedback.
+    const targetReel = reels.find(r => r.id === id);
+    if (!targetReel) return;
+    const isSaving = !targetReel.userSaved;
+
+    // OPTIMISTIC VISUALS ONLY (Instantly toggle the bookmark icon color)
+    // We update the reels state by mapping through the current reels and toggling the userSaved property of the target reel.
+    setReels(currentReels => currentReels.map(reel =>
+      reel.id === id ? { ...reel, userSaved: isSaving } : reel
+    ));
+
+    // BACKEND UPDATE: We then send a POST request to the backend to update the save status in the database.
+    try {
+      const res = await fetch(`http://localhost:3000/api/reels/${id}/save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      // ERROR HANDLING: If the response indicates that the user's session has expired (401 or 403), we alert the user, 
+      // clear their session data, and rollback the optimistic UI update to reflect that the save action was not successful.
+      if (res.status === 401 || res.status === 403) {
+        alert("Your session expired. Please log in again.");
+        localStorage.removeItem('glide_token');
+        localStorage.removeItem('glide_user');
+        
+        // Rollback the visual if token fails
+        setReels(currentReels => currentReels.map(reel =>
+          reel.id === id ? { ...reel, userSaved: !isSaving } : reel
+        ));
+        return;
+      }
+    } catch (error) {
+      console.error("Failed to update save in database:", error);
+      // Rollback the visual if the user's WiFi drops mid-click
+      setReels(currentReels => currentReels.map(reel =>
+        reel.id === id ? { ...reel, userSaved: !isSaving } : reel
+      ));
+    }
+  };
+
   // Upgraded Share function to hit the backend tracking route
   const handleShare = async (id: number, video_id: string, title: string) => {
     const shareUrl = `https://youtube.com/shorts/${video_id}`;
@@ -378,6 +432,26 @@ export default function Reels() {
                       </svg>
                     </div>
                     <span className="text-white text-xs font-semibold drop-shadow-md">{reel.likes || 0}</span>
+                  </button>
+
+                  {/* Bookmark Button */}
+                  <button 
+                    onClick={() => handleSave(reel.id)} 
+                    className="flex flex-col items-center group transition-transform active:scale-90"
+                    title="Save this reel"
+                  >
+                    <div className="bg-black/40 p-3 rounded-full backdrop-blur-md mb-1 border border-white/10 group-hover:bg-black/60 transition-colors">
+                      <svg 
+                        xmlns="http://www.w3.org/2000/svg" 
+                        className={`w-7 h-7 transition-colors ${reel.userSaved ? 'text-blue-500' : 'text-white'}`} 
+                        fill={reel.userSaved ? "currentColor" : "none"} 
+                        viewBox="0 0 24 24" 
+                        stroke="currentColor" 
+                        strokeWidth={2}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                      </svg>
+                    </div>
                   </button>
 
                   {/* Share Button */}

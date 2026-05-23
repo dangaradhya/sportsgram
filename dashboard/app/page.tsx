@@ -169,7 +169,63 @@ export default function Home() {
     }
   };
 
-  // 5. THE SHARE FUNCTION
+  // 5. The Save Function (Optimistic UI for Bookmarks)
+  const handleSave = async (id: number) => {
+    // Similar structure to the Like function, but simpler since we don't have a count to update.
+    // We check for the token, toggle the bookmark icon immediately, and then confirm with the backend.
+    const token = localStorage.getItem('glide_token');
+    if (!token) {
+      alert("Please log in to save posts!");
+      return;
+    }
+
+    // Step 1: Check current visual state
+    const targetPost = posts.find(p => p.id === id);
+    if (!targetPost) return;
+
+    // We determine whether the user is currently saving or unsaving the post based on the existing 'userSaved' state.
+    // If 'userSaved' is false, then the user is trying to save it (isSaving = true). If 'userSaved' is true, then the 
+    // user is trying to unsave it (isSaving = false).
+    const isSaving = !targetPost.userSaved;
+
+    // OPTIMISTIC VISUALS ONLY (Instantly toggle the bookmark icon color)
+    // We update the 'userSaved' property of the target post immediately to reflect the user's action, giving instant feedback.
+    setPosts(currentPosts => currentPosts.map(post =>
+      post.id === id ? { ...post, userSaved: isSaving } : post
+    ));
+
+    // POST request to the backend to update the save status in the database
+    try {
+      const res = await fetch(`http://localhost:3000/api/posts/${id}/save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      // If the token is invalid/expired, we alert the user, clear their session, and rollback the visual toggle.
+      if (res.status === 401 || res.status === 403) {
+        alert("Your session expired. Please log in again.");
+        localStorage.removeItem('glide_token');
+        localStorage.removeItem('glide_user');
+        
+        // Rollback the visual if token fails
+        setPosts(currentPosts => currentPosts.map(post =>
+          post.id === id ? { ...post, userSaved: !isSaving } : post
+        ));
+        return;
+      }
+    } catch (error) {
+      console.error("Failed to update save in database:", error);
+      // Rollback the visual if the user's WiFi drops mid-click
+      setPosts(currentPosts => currentPosts.map(post =>
+        post.id === id ? { ...post, userSaved: !isSaving } : post
+      ));
+    }
+  };
+
+  // 6. THE SHARE FUNCTION
   const handleShare = async (id: number, url: string, headline: string) => {
     if (navigator.share) {
       // Native Mobile Share
@@ -194,7 +250,7 @@ export default function Home() {
     }
   };
 
-  // 6. DYNAMIC CATEGORY EXTRACTION
+  // 7. DYNAMIC CATEGORY EXTRACTION
   // - We extract all categories from the posts array.
   // - We use 'new Set()' to remove duplicates (so if there are 5 Football posts, 'Football' only appears once).
   // - We prepend 'All' to the front of the array. 
@@ -234,7 +290,7 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* 7. CONDITIONAL RENDERING */}
+        {/* 8. CONDITIONAL RENDERING */}
         {loading && page === 1 ? (
           // Show this while waiting for the Express server to reply
           <p className="text-center text-gray-400 animate-pulse mt-20">Loading the latest news...</p>
@@ -260,7 +316,7 @@ export default function Home() {
               ))}
             </div>
 
-            {/* 8. MAPPING THE DATA */}
+            {/* 9. MAPPING THE DATA */}
             {/* We now loop through 'filteredPosts' instead of 'posts' */}
             <div className="space-y-6">
               {filteredPosts.map((post: any) => (
@@ -310,7 +366,7 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* Right Side: Like Button, Share Button, and Read Source Link */}
+                    {/* Right Side: Like Button, Save Button, Share Button, and Read Source Link */}
                     <div className="flex items-center space-x-6">
                       
                       {/* The Like Button */}
@@ -335,7 +391,25 @@ export default function Home() {
                         <span className="text-sm font-semibold">{post.likes || 0}</span>
                       </button>
 
-                      {/* Phase 3 - The Share Button */}
+                      {/* The Bookmark Button */}
+                      <button 
+                        onClick={() => handleSave(post.id)}
+                        className={`flex items-center space-x-1.5 transition-colors group ${post.userSaved ? 'text-blue-500' : 'text-gray-400 hover:text-blue-500'}`}
+                        title="Save this post"
+                      >
+                        <svg 
+                          xmlns="http://www.w3.org/2000/svg" 
+                          className="h-5 w-5 group-active:scale-110 transition-transform" 
+                          fill={post.userSaved ? "currentColor" : "none"} 
+                          viewBox="0 0 24 24" 
+                          stroke="currentColor" 
+                          strokeWidth={2}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                      </button>
+
+                      {/* The Share Button */}
                       <button 
                         onClick={() => handleShare(post.id, post.url, post.headline)}
                         className="flex items-center space-x-1 text-gray-400 hover:text-blue-400 transition-colors group relative"

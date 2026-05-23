@@ -127,6 +127,27 @@ const db = new sqlite3.Database('./glide.sqlite', (err) => {
             else console.log('reel_likes table ready.');
 
         });
+
+        // THE JUNCTION TABLES FOR BOOKMARKS
+        db.run(`CREATE TABLE IF NOT EXISTS saved_posts (
+            post_id INTEGER,
+            user_id INTEGER,
+            PRIMARY KEY (post_id, user_id)
+            )
+        `, (err) => {
+            if (err) console.error('Error creating saved_posts table:', err.message);
+            else console.log('saved_posts table ready.');
+        });
+
+        db.run(`CREATE TABLE IF NOT EXISTS saved_reels (
+            reel_id INTEGER,
+            user_id INTEGER,
+            PRIMARY KEY (reel_id, user_id)
+            )
+        `, (err) => {
+            if (err) console.error('Error creating saved_reels table:', err.message);
+            else console.log('saved_reels table ready.');
+        });
     }
 });
 
@@ -256,16 +277,21 @@ app.get('/api/posts', (req, res) => {
     // Dynamic SQL based on Auth Status
     // If we have a userId, we ask SQLite to check the post_likes junction table for a match.
     // This way, each post in the feed will come back with an extra field 'userLiked' that is true if this user has liked it, and false otherwise.
+    // We do the same for 'userSaved' by checking the saved_posts junction table. If we don't have a userId, we just return 0 for both fields.
     const sql = userId 
-        ? `SELECT posts.*, EXISTS(SELECT 1 FROM post_likes WHERE post_id = posts.id AND user_id = ?) AS userLiked 
+        ? `SELECT posts.*, 
+             EXISTS(SELECT 1 FROM post_likes WHERE post_id = posts.id AND user_id = ?) AS userLiked,
+             EXISTS(SELECT 1 FROM saved_posts WHERE post_id = posts.id AND user_id = ?) AS userSaved
            FROM posts ORDER BY timestamp DESC LIMIT ? OFFSET ?`
-        : `SELECT posts.*, 0 AS userLiked 
+        : `SELECT posts.*, 0 AS userLiked, 0 AS userSaved 
            FROM posts ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
 
     // The parameters we pass to the database depend on whether we have a userId or not. 
     // If we do, we need to include it for the subquery that checks if the user liked each post.
-    const params = userId ? [userId, limit, offset] : [limit, offset];
-
+    // Because we added a second ? for the userSaved subquery, we must pass userId TWICE in the array 
+    // (once for userLiked and once for userSaved), followed by the limit and offset.
+    const params = userId ? [userId, userId, limit, offset] : [limit, offset];
+    
     // Finally, we execute the query. If there's an error, we log it and return a 500 status. 
     // If it's successful, we return the rows of posts as JSON.
     db.all(sql, params, (err, rows) => {
@@ -276,9 +302,12 @@ app.get('/api/posts', (req, res) => {
 
         // SQLite returns 1 for true and 0 for false. We map it to standard strict booleans for React.
         // We take each row of the result and create a new object that has all the same fields (...row) but overrides 'userLiked' to be a boolean.
+        // This way, the frontend can easily check if userLiked is true or false without having to remember that 1 means liked and 0 means not liked.
+        // We do the same for 'userSaved' if we want to use that in the frontend as well.
         const formattedRows = rows.map(row => ({
             ...row,
-            userLiked: row.userLiked === 1
+            userLiked: row.userLiked === 1,
+            userSaved: row.userSaved === 1
         }));
 
         res.status(200).json(formattedRows);                                55
@@ -356,6 +385,52 @@ app.post('/api/reels/:id/share', (req, res) => {
     });
 });
 
+// Toggle Save on a Post
+// This route allows users to bookmark posts. It checks the saved_posts junction table to see if the user has already saved the post,
+app.post('/api/posts/:id/save', authenticateToken, (req, res) => {
+    // We extract the post ID from the URL parameters and the user ID from the authenticated JWT token, just like with likes.
+    const postId = req.params.id;
+    const userId = req.user.userId; 
+
+    // We check if the user has already saved this post by querying the saved_posts junction table. If a record exists, they have saved it.
+    db.get(`SELECT * FROM saved_posts WHERE post_id = ? AND user_id = ?`, [postId, userId], (err, row) => {
+        if (row) {
+            // Un-save it
+            db.run(`DELETE FROM saved_posts WHERE post_id = ? AND user_id = ?`, [postId, userId], () => {
+                res.json({ saved: false });
+            });
+        } else {
+            // Save it
+            db.run(`INSERT INTO saved_posts (post_id, user_id) VALUES (?, ?)`, [postId, userId], () => {
+                res.json({ saved: true });
+            });
+        }
+    });
+});
+
+// Toggle Save on a Reel
+// This route is the same logic as the post save route, but it operates on reels and uses the saved_reels junction table.
+app.post('/api/reels/:id/save', authenticateToken, (req, res) => {
+    // We extract the reel ID from the URL parameters and the user ID from the authenticated JWT token, just like with posts.
+    const reelId = req.params.id;
+    const userId = req.user.userId;
+
+    // We check if the user has already saved this reel by querying the saved_reels junction table. If a record exists, they have saved it.
+    db.get(`SELECT * FROM saved_reels WHERE reel_id = ? AND user_id = ?`, [reelId, userId], (err, row) => {
+        if (row) {
+            // Un-save it
+            db.run(`DELETE FROM saved_reels WHERE reel_id = ? AND user_id = ?`, [reelId, userId], () => {
+                res.json({ saved: false });
+            });
+        } else {
+            // Save it
+            db.run(`INSERT INTO saved_reels (reel_id, user_id) VALUES (?, ?)`, [reelId, userId], () => {
+                res.json({ saved: true });
+            });
+        }
+    });
+});
+
 // 11. REELS ROUTES (Videos)
 
 // These routes follow the same pattern as the posts routes. 
@@ -412,14 +487,21 @@ app.get('/api/reels', (req, res) => {
     }
 
     // Dynamic SQL builder - if we have a userId, we include the subquery to check if they've liked each reel.
+    //  If not, we just return 0 for userLiked. We do the same for userSaved as well
     let sql = userId
-        ? `SELECT reels.*, EXISTS(SELECT 1 FROM reel_likes WHERE reel_id = reels.id AND user_id = ?) AS userLiked FROM reels`
-        : `SELECT reels.*, 0 AS userLiked FROM reels`;
+        ? `SELECT reels.*, 
+           EXISTS(SELECT 1 FROM reel_likes WHERE reel_id = reels.id AND user_id = ?) AS userLiked,
+           EXISTS(SELECT 1 FROM saved_reels WHERE reel_id = reels.id AND user_id = ?) AS userSaved
+           FROM reels`
+        : `SELECT reels.*, 0 AS userLiked, 0 AS userSaved
+           FROM reels`;
     
     // The 'exclude' parameter allows the frontend to tell us which reels it has already displayed, 
     // so we can avoid showing the same ones again as the user scrolls.
     let params = [];
-    if (userId) params.push(userId); // Add userId first if it exists
+    if (userId) {
+        params.push(userId, userId); // For the userLiked and userSaved subqueries
+    }
 
     // If the frontend sends IDs to exclude, we inject the NOT IN clause
     // This allows us to avoid showing the same reels repeatedly as the user loads more.
@@ -452,14 +534,79 @@ app.get('/api/reels', (req, res) => {
         // Map SQLite 1/0 to true/false
         const formattedRows = rows.map(row => ({
             ...row,
-            userLiked: row.userLiked === 1
+            userLiked: row.userLiked === 1,
+            userSaved: row.userSaved === 1
         }));
 
         res.json(formattedRows);
     });
 });
 
-// 12. SERVER BINDING
+// 12. THE VAULT (User Profile Data)
+// This route fetches everything a user has interacted with. 
+// It requires the 'authenticateToken' bouncer to ensure we know exactly who is asking.
+app.get('/api/users/me/vault', authenticateToken, async (req, res) => {
+    const userId = req.user.userId;
+
+    // Define our 4 targeted SQL queries
+    const queries = {
+        likedPosts: `SELECT posts.*, 1 AS userLiked FROM posts 
+                     INNER JOIN post_likes ON posts.id = post_likes.post_id 
+                     WHERE post_likes.user_id = ? ORDER BY posts.timestamp DESC`,
+                     
+        savedPosts: `SELECT posts.*, 1 AS userSaved FROM posts 
+                     INNER JOIN saved_posts ON posts.id = saved_posts.post_id 
+                     WHERE saved_posts.user_id = ? ORDER BY posts.timestamp DESC`,
+                     
+        likedReels: `SELECT reels.*, 1 AS userLiked FROM reels 
+                     INNER JOIN reel_likes ON reels.id = reel_likes.reel_id 
+                     WHERE reel_likes.user_id = ? ORDER BY reels.timestamp DESC`,
+                     
+        savedReels: `SELECT reels.*, 1 AS userSaved FROM reels 
+                     INNER JOIN saved_reels ON reels.id = saved_reels.reel_id 
+                     WHERE saved_reels.user_id = ? ORDER BY reels.timestamp DESC`
+    };
+
+    // Helper function to wrap SQLite callbacks in modern Promises
+    // This allows us to use async/await syntax for cleaner code when executing multiple queries in parallel.
+    const fetchQuery = (query, params) => {
+        // We return a new Promise (JavaScript object that represents the eventual completion (or failure) of an 
+        // asynchronous operation and its resulting value) that wraps the db.all method. The Promise constructor takes a function with 
+        // 'resolve' and 'reject' parameters, which we call based on whether the database query succeeds or fails.
+        // If the query encounters an error, we call 'reject(err)' which will cause the Promise to fail and jump to the catch block.
+        // If the query is successful, we call 'resolve(rows)' which will pass the resulting rows to the next step in our async function.
+        return new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows || []);
+            });
+        });
+    };
+
+    try {
+        // Execute all 4 database queries at the exact same time
+        // Promise.all takes an array of Promises and returns a new Promise that resolves when all of the input Promises have resolved.
+        const [likedPosts, savedPosts, likedReels, savedReels] = await Promise.all([
+            fetchQuery(queries.likedPosts, [userId]),
+            fetchQuery(queries.savedPosts, [userId]),
+            fetchQuery(queries.likedReels, [userId]),
+            fetchQuery(queries.savedReels, [userId])
+        ]);
+
+        // Send a massive, beautifully organized JSON payload back to the frontend
+        res.status(200).json({
+            likedPosts,
+            savedPosts,
+            likedReels,
+            savedReels
+        });
+    } catch (error) {
+        console.error("Vault fetch error:", error);
+        res.status(500).json({ error: 'Failed to retrieve vault data' });
+    }
+});
+
+// 13. SERVER BINDING
 // Finally, we tell the Express app to bind to the port and start listening for traffic.
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
