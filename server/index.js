@@ -653,7 +653,150 @@ app.get('/api/users/me/vault', authenticateToken, async (req, res) => {
     }
 });
 
-// 13. SERVER BINDING
+// 13. LIVE UPDATES X AGGREGATION ROUTE 
+// This route acts as a server-side proxy to fetch real-time updates directly from X's 
+// public syndication stream, safely bypassing browser-level CORS security blocks.
+
+// In-memory cache to prevent X from instantly rate-limiting our backend
+const tweetCache = {};
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Helper function to insert explicit delays between sequential requests to protect our IP profile
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+app.get('/api/live-updates', async (req, res) => {
+    // We allow the frontend to specify handles via query parameters, but we'll multiplex a verified core pool!
+    // Caching multiplexer array targeting sports handles natively without list constraints
+    // Expanded core pool to 10 premier channels spanning dynamic real-time insights
+    const sportsPool = [
+        '433', 'DAZNBoxing', 'NBA', 
+        'ESPN', 'FabrizioRomano', 'atptour',
+        'F1', 'ufc', 'BleacherReport', 'TNTSportsUS'
+    ];
+    
+    // Generate a secure aggregate unique cache string signature
+    const cacheKey = 'global_sports_feed';
+
+    // Before we even attempt to fetch from X, we check our in-memory cache to see if we have a recent response that we can return immediately.
+    if (tweetCache[cacheKey] && (Date.now() - tweetCache[cacheKey].timestamp < CACHE_DURATION) && tweetCache[cacheKey].data.length > 0) {
+        console.log(`\n📡 [${new Date().toLocaleTimeString()}] Serving multiplexed sports feed from system cache layer memory cleanly.`);
+        return res.status(200).json(tweetCache[cacheKey].data);
+    }
+
+    const aggregatedTweets = [];
+
+    try {
+        // Async loop matrix engine fetching handles sequentially across working profile layers
+        // Converted from Promise.all to sequential loop pacing with delay throttle steps
+        for (const handle of sportsPool) {
+            try {
+                // Requesting 10 entries per handle to yield comfortable aggregation boundaries
+                const targetUrl = `https://syndication.twitter.com/srv/timeline-profile/screen-name/${handle}?maxEntries=10`;
+                const xResponse = await fetch(targetUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache',
+                        'Referer': 'https://platform.twitter.com/'
+                    }
+                });
+
+                if (!xResponse.ok) continue; // Skip individual user failures gracefully
+                
+                // We need to parse the HTML response to extract the embedded JSON data that contains the tweets.
+                // X's syndication endpoint returns an HTML page that includes a <script> tag with the ID "__NEXT_DATA__". 
+                // This script tag contains a JSON object with all the data for the user's timeline, including the tweets.
+                const htmlText = await xResponse.text();
+                const dataRegex = /<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/;
+                const match = htmlText.match(dataRegex);
+
+                if (!match) continue;
+                
+                // If we successfully find the JSON data, we parse it and extract the tweets. We then map those tweets into a 
+                // simplified format that includes just the ID, text, creation time, and author handle.
+                const parsedJson = JSON.parse(match[1]);
+                const entries = parsedJson.props?.pageProps?.timeline?.entries || [];
+                
+                // We loop through the entries and extract the tweet data. We filter out any entries that don't have valid tweet data or text,
+                // and then we push the relevant information into our aggregatedTweets array.
+                entries
+                    .map(entry => entry.content?.tweet)
+                    .filter(tweetData => !!tweetData && !!tweetData.text)
+                    .forEach(tweetData => {
+                        aggregatedTweets.push({
+                            id: tweetData.id_str,
+                            text: tweetData.text,
+                            created_at: tweetData.created_at,
+                            author: `@${handle}`
+                        });
+                    });
+
+                // Inject a quiet 120ms block pause to make sure X firewalls view requests as separate organic actions
+                await sleep(120);
+
+            } catch (innerErr) {
+                // Swallow handle dropout loops safely
+                console.warn(`Soft handle loop dropout checked for account target: @${handle}`);
+            }
+        }
+
+        // Explicit 48-Hour chronological date subtraction barrier filter
+        const fortyEightHoursAgo = Date.now() - (48 * 60 * 60 * 1000);
+        
+        // We filter out any tweets that are older than 48 hours to ensure our feed is fresh and relevant.
+        const freshSortedTweets = aggregatedTweets
+            .filter(tweet => {
+                const tweetTime = new Date(tweet.created_at).getTime();
+                // Destroys pinned ancient tweets completely
+                return tweetTime > fortyEightHoursAgo;
+            })
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) // True chronological ordering layout
+            .slice(0, 50) // Expanded restriction scope cleanly to return up to 50 of the absolute freshest updates
+            .map(tweet => {
+                // We convert the tweet's creation time into a human-readable format like "5m ago" or "2h ago". 
+                // If it's older than 24 hours, we show the date instead.
+                let timeLabel = 'Just now';
+                const diffMinutes = Math.floor((Date.now() - new Date(tweet.created_at).getTime()) / 60000);
+                if (diffMinutes < 60) timeLabel = `${diffMinutes}m ago`;
+                else if (diffMinutes < 1440) timeLabel = `${Math.floor(diffMinutes / 60)}h ago`;
+                else timeLabel = new Date(tweet.created_at).toLocaleDateString();
+                
+                // Finally, we return a simplified object for each tweet that includes the ID, text, formatted time, author handle, and a direct URL to the tweet on X.
+                return {
+                    id: tweet.id,
+                    text: tweet.text,
+                    time: timeLabel,
+                    author: tweet.author,
+                    url: `https://x.com/${tweet.author.replace('@', '')}/status/${tweet.id}`
+                };
+            });
+
+        // Save successfully aggregated elements into state memory
+        tweetCache[cacheKey] = {
+            timestamp: Date.now(),
+            data: freshSortedTweets
+        };
+        
+        // Finally, we send the aggregated, filtered, and formatted tweets back to the frontend as JSON.
+        res.status(200).json(freshSortedTweets);
+
+    } catch (error) {
+        console.error("Backend Proxy Error aggregating multiplex arrays:", error.message);
+        
+        // FAILSAFE ARCHITECTURE: If an execution exception hits or an active 429 barrier engages, 
+        // fallback to your last saved cache instead of crashing your user interface.
+        if (tweetCache[cacheKey] && tweetCache[cacheKey].data.length > 0) {
+            console.warn("Server hit dynamic lockouts. Deploying backup cache state metrics immediately.");
+            return res.status(200).json(tweetCache[cacheKey].data);
+        }
+
+        res.status(502).json({ error: "Failed to pull fresh breaking data assets directly from X server streams." });
+    }
+});
+
+// 14. SERVER BINDING
 // Finally, we tell the Express app to bind to the port and start listening for traffic.
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);

@@ -11,6 +11,7 @@ import Link from 'next/link';
 // Import your Google Auth and Theme Toggle component for use in the header
 import AuthButton from '@/components/AuthButton';
 import ThemeToggle from '@/components/ThemeToggle';
+import LiveUpdates from "@/components/LiveUpdates";
 
 export default function Home() {
   // 2. STATE MANAGEMENT
@@ -265,10 +266,10 @@ export default function Home() {
 
   return (
     // Adjusted background/text colors for Light/Dark mode with a smooth transition
+    // Adjusted max-w constraints on wrapper wrapper block to hold large layouts comfortably
     <main className="min-h-screen bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-white p-4 md:p-8 relative transition-colors duration-300">
       
-
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         
         {/* Header Section */}
         <div className="flex items-center justify-between mb-4"> 
@@ -294,173 +295,186 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* 8. CONDITIONAL RENDERING */}
-        {loading && page === 1 ? (
-          // Show this while waiting for the Express server to reply
-          <p className="text-center text-gray-500 dark:text-gray-400 animate-pulse mt-20">Loading the latest news...</p>
-        ) : posts.length === 0 ? (
-          // Show this if the database is empty
-          <p className="text-center text-gray-500 dark:text-gray-400 mt-20">No news in the database yet. Run the scraper!</p>
-        ) : (
-          <>
-            {/* The Category Filter Bar UI */}
-            <div className="flex space-x-3 overflow-x-auto pb-4 mb-6 scrollbar-hide">
-              {uniqueCategories.map(category => (
-                <button
-                  key={category}
-                  onClick={() => setActiveCategory(category)}
-                  className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-200 ${
-                    activeCategory === category
-                      ? 'bg-purple-600 text-white shadow-md shadow-purple-500/30 border border-purple-500'
-                      : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-800'
-                  }`}
-                >
-                  {category}
-                </button>
-              ))}
-            </div>
-
-            {/* 9. MAPPING THE DATA */}
-            {/* We now loop through 'filteredPosts' instead of 'posts' */}
-            <div className="space-y-6">
-              {filteredPosts.map((post: any) => (
-                <div key={post.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-md dark:shadow-lg hover:border-gray-300 dark:hover:border-gray-700 transition-colors group overflow-hidden">
-                  
-                  {/* Top Row: Category Badge and Timestamp */}
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-semibold px-2.5 py-0.5 rounded uppercase tracking-wider">
-                      {post.sport_category}
-                    </span>
-                    <span className="text-gray-400 dark:text-gray-500 text-xs">
-                      {new Date(post.timestamp).toLocaleDateString()}
-                    </span>
-                  </div>
-
-                  {/* Image Rendering Phase - The actual image container! */}
-                  {/* We use standard img tag, set a fixed height for consistency, and add a hover scale effect */}
-                  {post.image_url && (
-                    <div className="w-full h-48 md:h-64 rounded-xl overflow-hidden mb-5 bg-gray-200 dark:bg-gray-800 relative">
-                      <img 
-                        src={post.image_url} 
-                        alt={post.headline}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-in-out"
-                        loading="lazy"
-                      />
-                    </div>
-                  )}
-
-                  {/* Main Content: AI Generated Headline & Summary */}
-                  <h2 className="text-xl font-bold mb-3">{post.headline}</h2>
-                  <p className="text-gray-600 dark:text-gray-300 text-sm mb-4 leading-relaxed">{post.content}</p>
-
-                  {/* Bottom Row now includes the interactive Like button */}
-                  <div className="flex justify-between items-center border-t border-gray-100 dark:border-gray-800 pt-4 mt-4">
-                    
-                    {/* Left Side: Excitement Meter */}
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs text-gray-500 dark:text-gray-400">Excitement:</span>
-                      <div className="flex">
-                        {/* We dynamically generate a visual meter based on the 1-10 excitement_level */}
-                        {[...Array(10)].map((_, i) => (
-                          <div 
-                            key={i} 
-                            className={`h-1.5 w-3 mx-px rounded-full ${i < post.excitement_level ? 'bg-gradient-to-r from-orange-500 to-red-500' : 'bg-gray-200 dark:bg-gray-800'}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Right Side: Like Button, Save Button, Share Button, and Read Source Link */}
-                    <div className="flex items-center space-x-6">
-                      
-                      {/* The Like Button */}
-                      <button 
-                        onClick={() => handleLike(post.id)}
-                        // Force the button to be red if the user liked it
-                        className={`flex items-center space-x-1.5 transition-colors group ${post.userLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
-                      >
-                        {/* SVG Heart Icon */}
-                        <svg 
-                          xmlns="http://www.w3.org/2000/svg" 
-                          className="h-5 w-5 group-active:scale-110 transition-transform" 
-                          // Fills the inside of the heart with color if liked
-                          fill={post.userLiked ? "currentColor" : "none"} 
-                          viewBox="0 0 24 24" 
-                          stroke="currentColor" 
-                          strokeWidth={2}
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                        </svg>
-                        {/* Fallback to 0 if post.likes is undefined/null */}
-                        <span className="text-sm font-semibold">{post.likes || 0}</span>
-                      </button>
-
-                      {/* The Bookmark Button */}
-                      <button 
-                        onClick={() => handleSave(post.id)}
-                        className={`flex items-center space-x-1.5 transition-colors group ${post.userSaved ? 'text-blue-500' : 'text-gray-400 hover:text-blue-500'}`}
-                        title="Save this post"
-                      >
-                        <svg 
-                          xmlns="http://www.w3.org/2000/svg" 
-                          className="h-5 w-5 group-active:scale-110 transition-transform" 
-                          fill={post.userSaved ? "currentColor" : "none"} 
-                          viewBox="0 0 24 24" 
-                          stroke="currentColor" 
-                          strokeWidth={2}
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                        </svg>
-                      </button>
-
-                      {/* The Share Button */}
-                      <button 
-                        onClick={() => handleShare(post.id, post.url, post.headline)}
-                        className="flex items-center space-x-1 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors group relative"
-                        title="Share this post"
-                      >
-                        {/* SVG Share Icon */}
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 group-active:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                        </svg>
-                        
-                        {/* Dynamic Tooltip: Only shows if this specific post was copied */}
-                        {copiedId === post.id && (
-                          <span className="absolute -top-10 -left-4 bg-gray-800 dark:bg-gray-700 text-white text-xs font-semibold px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap animate-pulse">
-                            Copied!
-                          </span>
-                        )}
-                      </button>
-
-                      <a 
-                        href={post.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-sm text-purple-600 hover:text-purple-500 dark:text-purple-400 dark:hover:text-purple-300 font-medium"
-                      >
-                        Read Source &rarr;
-                      </a>
-                    </div>
-                  </div>
-
+        {/* Implemented 3-Column Split Layout System Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+          
+          {/* Left/Middle Core Data Stream (Takes 2 columns) */}
+          <div className="lg:col-span-2">
+            {/* 8. CONDITIONAL RENDERING */}
+            {loading && page === 1 ? (
+              // Show this while waiting for the Express server to reply
+              <p className="text-center text-gray-500 dark:text-gray-400 animate-pulse mt-20">Loading the latest news...</p>
+            ) : posts.length === 0 ? (
+              // Show this if the database is empty
+              <p className="text-center text-gray-500 dark:text-gray-400 mt-20">No news in the database yet. Run the scraper!</p>
+            ) : (
+              <>
+                {/* The Category Filter Bar UI */}
+                <div className="flex space-x-3 overflow-x-auto pb-4 mb-6 scrollbar-hide">
+                  {uniqueCategories.map(category => (
+                    <button
+                      key={category}
+                      onClick={() => setActiveCategory(category)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-200 ${
+                        activeCategory === category
+                          ? 'bg-purple-600 text-white shadow-md shadow-purple-500/30 border border-purple-500'
+                          : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-800'
+                      }`}
+                    >
+                      {category}
+                    </button>
+                  ))}
                 </div>
-              ))}
-            </div>
 
-            {/* Infinite Scroll Sentinel replacing the Load More button */}
-            {hasMore && (
-              <div id="posts-scroll-sentinel" className="mt-10 flex justify-center h-16 items-center">
-                {loadingMore && (
-                  <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                {/* 9. MAPPING THE DATA */}
+                {/* We now loop through 'filteredPosts' instead of 'posts' */}
+                <div className="space-y-6">
+                  {filteredPosts.map((post: any) => (
+                    <div key={post.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-md dark:shadow-lg hover:border-gray-300 dark:hover:border-gray-700 transition-colors group overflow-hidden">
+                      
+                      {/* Top Row: Category Badge and Timestamp */}
+                      <div className="flex justify-between items-center mb-4">
+                        <span className="bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-semibold px-2.5 py-0.5 rounded uppercase tracking-wider">
+                          {post.sport_category}
+                        </span>
+                        <span className="text-gray-400 dark:text-gray-500 text-xs">
+                          {new Date(post.timestamp).toLocaleDateString()}
+                        </span>
+                      </div>
+
+                      {/* Image Rendering Phase - The actual image container! */}
+                      {/* We use standard img tag, set a fixed height for consistency, and add a hover scale effect */}
+                      {post.image_url && (
+                        <div className="w-full h-48 md:h-64 rounded-xl overflow-hidden mb-5 bg-gray-200 dark:bg-gray-800 relative">
+                          <img 
+                            src={post.image_url} 
+                            alt={post.headline}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-in-out"
+                            loading="lazy"
+                          />
+                        </div>
+                      )}
+
+                      {/* Main Content: AI Generated Headline & Summary */}
+                      <h2 className="text-xl font-bold mb-3">{post.headline}</h2>
+                      <p className="text-gray-600 dark:text-gray-300 text-sm mb-4 leading-relaxed">{post.content}</p>
+
+                      {/* Bottom Row now includes the interactive Like button */}
+                      <div className="flex justify-between items-center border-t border-gray-100 dark:border-gray-800 pt-4 mt-4">
+                        
+                        {/* Left Side: Excitement Meter */}
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">Excitement:</span>
+                          <div className="flex">
+                            {/* We dynamically generate a visual meter based on the 1-10 excitement_level */}
+                            {[...Array(10)].map((_, i) => (
+                              <div 
+                                key={i} 
+                                className={`h-1.5 w-3 mx-px rounded-full ${i < post.excitement_level ? 'bg-gradient-to-r from-orange-500 to-red-500' : 'bg-gray-200 dark:bg-gray-800'}`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Right Side: Like Button, Save Button, Share Button, and Read Source Link */}
+                        <div className="flex items-center space-x-6">
+                          
+                          {/* The Like Button */}
+                          <button 
+                            onClick={() => handleLike(post.id)}
+                            // Force the button to be red if the user liked it
+                            className={`flex items-center space-x-1.5 transition-colors group ${post.userLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
+                          >
+                            {/* SVG Heart Icon */}
+                            <svg 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              className="h-5 w-5 group-active:scale-110 transition-transform" 
+                              // Fills the inside of the heart with color if liked
+                              fill={post.userLiked ? "currentColor" : "none"} 
+                              viewBox="0 0 24 24" 
+                              stroke="currentColor" 
+                              strokeWidth={2}
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                            </svg>
+                            {/* Fallback to 0 if post.likes is undefined/null */}
+                            <span className="text-sm font-semibold">{post.likes || 0}</span>
+                          </button>
+
+                          {/* The Bookmark Button */}
+                          <button 
+                            onClick={() => handleSave(post.id)}
+                            className={`flex items-center space-x-1.5 transition-colors group ${post.userSaved ? 'text-blue-500' : 'text-gray-400 hover:text-blue-500'}`}
+                            title="Save this post"
+                          >
+                            <svg 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              className="h-5 w-5 group-active:scale-110 transition-transform" 
+                              fill={post.userSaved ? "currentColor" : "none"} 
+                              viewBox="0 0 24 24" 
+                              stroke="currentColor" 
+                              strokeWidth={2}
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                            </svg>
+                          </button>
+
+                          {/* The Share Button */}
+                          <button 
+                            onClick={() => handleShare(post.id, post.url, post.headline)}
+                            className="flex items-center space-x-1 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors group relative"
+                            title="Share this post"
+                          >
+                            {/* SVG Share Icon */}
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 group-active:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                            </svg>
+                            
+                            {/* Dynamic Tooltip: Only shows if this specific post was copied */}
+                            {copiedId === post.id && (
+                              <span className="absolute -top-10 -left-4 bg-gray-800 dark:bg-gray-700 text-white text-xs font-semibold px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap animate-pulse">
+                                Copied!
+                              </span>
+                            )}
+                          </button>
+
+                          <a 
+                            href={post.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-sm text-purple-600 hover:text-purple-500 dark:text-purple-400 dark:hover:text-purple-300 font-medium"
+                          >
+                            Read Source &rarr;
+                          </a>
+                        </div>
+                      </div>
+
+                    </div>
+                  ))}
+                </div>
+
+                {/* Infinite Scroll Sentinel replacing the Load More button */}
+                {hasMore && (
+                  <div id="posts-scroll-sentinel" className="mt-10 flex justify-center h-16 items-center">
+                    {loadingMore && (
+                      <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                    )}
+                  </div>
                 )}
-              </div>
+                
+                {!hasMore && posts.length > 0 && (
+                  <p className="text-center text-gray-500 mt-10 mb-10 text-sm font-medium">You have reached the end of the feed.</p>
+                )}
+              </>
             )}
-            
-            {!hasMore && posts.length > 0 && (
-              <p className="text-center text-gray-500 mt-10 mb-10 text-sm font-medium">You have reached the end of the feed.</p>
-            )}
-          </>
-        )}
+          </div>
+
+          {/* Dynamic Right-Side Live Updates Feed (Sticky Layout) */}
+          {/* This pins the live timeline next to the posts card stream, matching your carousel intent */}
+          <div className="lg:col-span-1 lg:sticky lg:top-8 w-full">
+            <LiveUpdates />
+          </div>
+        </div>
       </div>
     </main>
   );
