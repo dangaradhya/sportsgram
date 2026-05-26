@@ -2,10 +2,8 @@
 "use html";
 "use client";
 
-// IMPORTS
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 
-// TweetCard interface to define the structure of each tweet object
 interface TweetCard {
   id: string;
   text: string;
@@ -14,41 +12,49 @@ interface TweetCard {
   url: string;
 }
 
-// LiveUpdates component optimized strictly for server-side multiplex cache consumption
 export default function LiveUpdates() {
-  // STATE MANAGEMENT
   const [tweets, setTweets] = useState<TweetCard[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const loadTimelineData = async () => {
-      try {
-        // Points natively to our unified backend multiplexer proxy gateway
-        const fetchUrl = `http://localhost:3000/api/live-updates`;
-
-        // FETCHING DATA
-        const res = await fetch(fetchUrl);
-        if (!res.ok) throw new Error("Backend connection issue");
-        
-        // PARSE RESPONSE
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        
-        // UPDATE STATE
+  const loadTimelineData = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setLoading(true);
+    
+    try {
+      const fetchUrl = `http://localhost:3000/api/live-updates`;
+      const res = await fetch(fetchUrl);
+      
+      if (!res.ok) throw new Error("Backend connection issue");
+      
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      
+      // FRONTEND DATA GUARD: Only update if we received actual data, 
+      // OR if we truly have 0 tweets and the screen is already empty.
+      if (Array.isArray(data) && data.length > 0) {
         setTweets(data);
-      } catch (err) {
-        console.warn("Backend proxy offline or rate wall hit. Loading defensive dashboard UI placeholders.");
-      } finally {
-        setLoading(false);
+      } else if (tweets.length === 0) {
+        setTweets([]); // Safe to clear if we had nothing to begin with
+      } else {
+        console.warn("Backend returned empty payload, shielding UI by keeping existing tweets.");
       }
-    };
 
-    // INITIAL DATA LOAD
-    loadTimelineData();
-  }, []);
+    } catch (err) {
+      console.warn("Backend proxy offline or rate wall hit.");
+    } finally {
+      if (showSpinner) setLoading(false);
+    }
+  }, [tweets.length]);
+
+  useEffect(() => {
+    // Initial load
+    loadTimelineData(true);
+
+    // Silent background poll every 3 minutes
+    const intervalId = setInterval(() => loadTimelineData(false), 3 * 60 * 1000);
+    return () => clearInterval(intervalId);
+  }, [loadTimelineData]);
 
   return (
-    // DASHBOARD CARD CONTAINER
     <div className="w-full flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden shadow-md dark:shadow-lg transition-all duration-300">
       
       {/* CARD HEADER */}
@@ -62,15 +68,33 @@ export default function LiveUpdates() {
             Live Updates
           </h2>
         </div>
-        <span className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-bold bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-md">
-          X Feed
-        </span>
+        
+        <div className="flex items-center space-x-3">
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-bold bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-md">
+            X Feed
+          </span>
+          <button 
+            onClick={() => loadTimelineData(true)}
+            className="text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors group p-1"
+            title="Refresh Timeline"
+          >
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              className="h-4 w-4 group-active:rotate-180 transition-transform duration-300" 
+              fill="none" 
+              viewBox="0 0 24 24" 
+              stroke="currentColor" 
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* CARD CONTENT AREA */}
-      {/* Set a clean, consistent height window with an active scroll bar layer */}
       <div className="w-full max-h-[600px] overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-950/40 scrollbar-hide">
-        {loading ? (
+        {loading && tweets.length === 0 ? (
           <div className="py-20 flex items-center justify-center">
             <p className="text-xs text-gray-400 animate-pulse font-medium">Syncing timeline feeds...</p>
           </div>
@@ -94,7 +118,6 @@ export default function LiveUpdates() {
                 </p>
               </div>
 
-              {/* LINK TO ORIGINAL TWEET */}
               <div className="mt-4 pt-3 border-t border-gray-50 dark:border-gray-800/50 flex justify-between items-center">
                 <a 
                   href={tweet.url} 
