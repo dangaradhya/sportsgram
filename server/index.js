@@ -653,204 +653,32 @@ app.get('/api/users/me/vault', authenticateToken, async (req, res) => {
     }
 });
 
-// 13. LIVE UPDATES X AGGREGATION ROUTE 
-// This route acts as a server-side proxy to fetch real-time updates directly from X's 
-// public syndication stream, safely bypassing browser-level CORS security blocks.
+// 13. LIVE UPDATES GAME TRACKER ROUTE
+// This route returns pre-compiled real-time match statuses, scores, and active in-play tickers
+// pulled down from our background daemon sync process directly into your SQLite layer.
+app.get('/api/live-updates', (req, res) => {
+    // Queries the cache table sorted by the latest data updates
+    const sql = `SELECT * FROM live_updates ORDER BY fetched_at DESC LIMIT 50`;
 
-// In-memory cache to prevent X from instantly rate-limiting our backend
-const tweetCache = {};
-const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
-
-// Helper function to insert explicit delays between sequential requests to protect our IP profile
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-app.get('/api/live-updates', async (req, res) => {
-    // We allow the frontend to specify handles via query parameters, but we'll multiplex a verified core pool!
-    // Caching multiplexer array targeting sports handles natively without list constraints
-    // Expanded core pool to 10 premier channels spanning dynamic real-time insights
-    const sportsPool = [
-        '433', 'DAZNBoxing', 'NBA', 
-        'ESPN', 'FabrizioRomano', 'atptour',
-        'F1', 'ufc', 'BleacherReport', 'TNTSportsUS'
-    ];
-    
-    // Generate a secure aggregate unique cache string signature
-    const cacheKey = 'global_sports_feed';
-
-    // Before we even attempt to fetch from X, we check our in-memory cache to see if we have a recent response that we can return immediately.
-    // If a timestamp exists and is less than 15 minutes old, respect the cooldown NO MATTER WHAT.
-    if (tweetCache[cacheKey] && (Date.now() - tweetCache[cacheKey].timestamp < CACHE_DURATION)) {
-        if (tweetCache[cacheKey].data.length > 0) {
-            console.log(`\n📡 [${new Date().toLocaleTimeString()}] Serving balanced sports feed from system cache layer memory cleanly.`);
-        } else {
-            console.log(`\n🛡️ [${new Date().toLocaleTimeString()}] IP Protection Shield active. Cooldown timer running before we hit X again.`);
-        }
-        return res.status(200).json(tweetCache[cacheKey].data);
-    }
-
-    const aggregatedTweets = [];
-    const fortyEightHoursAgo = Date.now() - (48 * 60 * 60 * 1000); // Explicit 48-Hour chronological date subtraction barrier filter
-
-    try {
-        console.log(`\n🔄 [${new Date().toLocaleTimeString()}] Cache empty or expired. Initiating secure multi-path fetch to X servers...`);
-
-        // Async loop matrix engine fetching handles sequentially across working profile layers
-        // Converted from Promise.all to sequential loop pacing with delay throttle steps
-        for (const handle of sportsPool) {
-            try {
-                // NEW TELEMETRY: Prove the server is actively targeting the channel
-                console.log(`\n▶ [FETCHING] @${handle}...`);
-
-                // Requesting 30 entries per handle to yield comfortable aggregation boundaries
-                const targetUrl = `https://syndication.twitter.com/srv/timeline-profile/screen-name/${handle}?maxEntries=30`;
-                const xResponse = await fetch(targetUrl, {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.9',
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache',
-                        'Referer': 'https://platform.twitter.com/'
-                    }
-                });
-
-                if (!xResponse.ok) {
-                    console.log(`  └─ ❌ HTTP Error ${xResponse.status}`);
-                    continue; // Skip individual user failures gracefully
-                }
-                
-                // We need to parse the HTML response to extract the embedded JSON data that contains the tweets.
-                // X's syndication endpoint returns an HTML page that includes a <script> tag with the ID "__NEXT_DATA__". 
-                // This script tag contains a JSON object with all the data for the user's timeline, including the tweets.
-                const htmlText = await xResponse.text();
-                const dataRegex = /<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/;
-                const match = htmlText.match(dataRegex);
-
-                if (!match) {
-                    console.log(`  └─ ❌ No JSON data block found in HTML.`);
-                    continue;
-                }
-                
-                // If we successfully find the JSON data, we parse it and extract the tweets. We then map those tweets into a 
-                // simplified format that includes just the ID, text, creation time, and author handle.
-                const parsedJson = JSON.parse(match[1]);
-                const entries = parsedJson.props?.pageProps?.timeline?.entries || [];
-                
-                console.log(`  └─ 📦 Raw entries downloaded: ${entries.length}`);
-
-                // We apply a series of transformations to the entries to extract valid tweets, filter out old ones, sort by newest, 
-                // and take the top 5 freshest tweets per handle.
-                const handleSpecificTweets = entries
-                    .map(entry => {
-                        if (!entry || !entry.content) return null;
-                        
-                        // EXPANDED MATRIX: Catching standard tweets, widgets, and deeply nested Media/Quote tweets
-                        return entry.content.tweet || 
-                               entry.content.item?.content?.tweet || 
-                               entry.content.itemContent?.tweet_results?.result?.legacy ||
-                               entry.content.itemContent?.tweet_results?.result?.tweet?.legacy; 
-                    })
-                    .filter(tweetData => !!tweetData && !!tweetData.text)
-                    // FILTER FIRST: Drop everything older than 48 hours immediately
-                    .filter(tweetData => {
-                        const tweetTime = new Date(tweetData.created_at).getTime();
-                        // If parsing fails (NaN), keep the tweet so we at least see data.
-                        if (isNaN(tweetTime)) return true; 
-                        return tweetTime > fortyEightHoursAgo;
-                    })
-                    // SORT SECOND: Now that we only have fresh data, sort by newest
-                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                    // SLICE LAST: Take the freshest 5
-                    .slice(0, 5);
-
-                // Log the telemetry so you can see exactly who is supplying data
-                console.log(`  └─ ✅ Extracted ${handleSpecificTweets.length} valid fresh tweets for @${handle}.`);
-
-                // Push those balanced 5 tweets into our master array
-                handleSpecificTweets.forEach(tweetData => {
-                    aggregatedTweets.push({
-                        id: tweetData.id_str || String(Math.random()), // Fallback ID if X changes their structure
-                        text: tweetData.text,
-                        created_at: tweetData.created_at,
-                        author: `@${handle}`
-                    }); 
-                });
-
-                // Inject a quiet 250ms block pause to make sure X firewalls view requests as separate organic actions
-                await sleep(250);
-
-            } catch (innerErr) {
-                // Swallow handle dropout loops safely
-                console.warn(`  └─ ⚠️ Soft handle loop dropout checked for account target: @${handle} | Error: ${innerErr.message}`);
-            }
-        }
-        
-        // Final UI Mapping: We now have up to 50 perfectly balanced tweets. 
-        // We just need to sort the master array chronologically so the user's timeline flows naturally.
-        const finalFeed = aggregatedTweets
-            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-            .map(tweet => {
-                // UI Time Labels
-                // We want to show "Just now", "5m ago", "2h ago", or a date depending on how old the tweet is.
-                let timeLabel = 'Just now';
-                const tweetDate = new Date(tweet.created_at);
-                const diffMinutes = Math.floor((Date.now() - tweetDate.getTime()) / 60000);
-                if (diffMinutes < 60) timeLabel = `${diffMinutes}m ago`;
-                else if (diffMinutes < 1440) timeLabel = `${Math.floor(diffMinutes / 60)}h ago`;
-                else timeLabel = tweetDate.toLocaleDateString();
-                
-                // We return a simplified object for the frontend that includes the tweet ID, text, 
-                // formatted time label, author handle, and a direct URL to the tweet on X.
-                return {
-                    id: tweet.id, 
-                    text: tweet.text,
-                    time: timeLabel,
-                    author: tweet.author,
-                    url: `https://x.com/${tweet.author.replace('@', '')}/status/${tweet.id}`
-                };
-            });
-
-        // CACHE SHIELD: Manage state updates safely
-        if (finalFeed.length > 0) {
-            // Success! Save the data and start the 15-minute timer
-            tweetCache[cacheKey] = {
-                timestamp: Date.now(),
-                data: finalFeed
-            };
-            console.log(`\n📡 [${new Date().toLocaleTimeString()}] Successfully pulled and aggregated ${finalFeed.length} fresh sports updates from X syndication streams.`);
-            return res.status(200).json(finalFeed);
-        } else {
-            // We got 0 tweets back (either due to a 429 or empty timelines)
-            if (tweetCache[cacheKey] && tweetCache[cacheKey].data.length > 0) {
-                console.warn("\n⚠️ X returned 0 new tweets. Shield activated: serving previous valid cache and resetting timer.");
-                // Reset the timer so we don't hammer them again immediately
-                tweetCache[cacheKey].timestamp = Date.now(); 
-                return res.status(200).json(tweetCache[cacheKey].data);
-            } else {
-                console.log(`\n🛡️ [${new Date().toLocaleTimeString()}] Complete fetch failure. Locking down server requests for 15 minutes to protect IP.`);
-                // THE DEATH SPIRAL FIX: Save an empty array AND start the 15-minute timer!
-                tweetCache[cacheKey] = {
-                    timestamp: Date.now(),
-                    data: []
-                };
-                return res.status(200).json([]);
-            }
-        }
-    } catch (error) {
-        console.error("Backend Proxy Error aggregating multiplex arrays:", error.message);
-        
-        // FAILSAFE ARCHITECTURE
-        if (tweetCache[cacheKey] && tweetCache[cacheKey].data.length > 0) {
-            console.warn("Server hit dynamic lockouts. Deploying backup cache state metrics immediately.");
-            // Reset the timer here too
-            tweetCache[cacheKey].timestamp = Date.now();
-            return res.status(200).json(tweetCache[cacheKey].data);
+    // We execute the query to get the latest live updates. If there's an error, we log it and return a 500 status.
+    db.all(sql, [], (err, rows) => {
+        if (err) {
+            console.error("Database query error retrieving live-updates scoreboard:", err.message);
+            return res.status(500).json({ error: 'Failed to retrieve synchronized score tracking matrix.' });
         }
 
-        // Lock down the server to prevent death spirals on fatal errors
-        tweetCache[cacheKey] = { timestamp: Date.now(), data: [] };
-        res.status(502).json({ error: "Failed to pull fresh breaking data assets directly from X server streams." });
-    }
+        // Map the raw rows straight to your existing frontend card component fields!
+        const formattedFeed = rows.map(row => ({
+            id: row.id,
+            text: row.text,            // This will hold our clean status string: e.g. "GOAL! Mbappe (42') || PSG 1 - 0 Real Madrid"
+            time: row.time_label,      // This holds the current game clock: e.g. "42 mins played"
+            author: row.author,        // This holds the competition tag: e.g. "UEFA Champions League"
+            url: row.url,              // Points cleanly to a live stats tracking page
+            image_url: row.image_url   // Holds the league or team icon graphic asset URL
+        }));
+
+        res.status(200).json(formattedFeed);
+    });
 });
 
 // 14. SERVER BINDING
